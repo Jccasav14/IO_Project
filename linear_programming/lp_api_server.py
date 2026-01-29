@@ -1,12 +1,15 @@
 import json
 import math
+import os
 import sys
+import urllib.error
+import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 # Ensure "src" resolves to linear_programming/src.
 ROOT = Path(__file__).resolve().parent
-LP_ROOT = ROOT / "linear_programming"
+LP_ROOT = ROOT
 if str(LP_ROOT) not in sys.path:
     sys.path.insert(0, str(LP_ROOT))
 
@@ -14,6 +17,50 @@ from src.core.lp import solve_lp  # noqa: E402
 from src.core.lp.parsers import model_from_dict  # noqa: E402
 from src.core.lp.dual import build_dual  # noqa: E402
 from src.core.lp.two_phase import solve_two_phase  # noqa: E402
+
+
+def load_env(path: Path) -> None:
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+load_env(Path(__file__).resolve().parents[1] / ".env")
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL_PARSE = os.getenv("GEMINI_MODEL_PARSE", "gemini-2.5-flash")
+GEMINI_MODEL_REPORT = os.getenv("GEMINI_MODEL_REPORT", "gemini-2.5-flash")
+
+
+def _gemini_request_json(model: str, payload: dict) -> dict:
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        data = resp.read().decode("utf-8")
+        return json.loads(data)
+
+
+def _extract_gemini_text(resp: dict) -> str:
+    for cand in resp.get("candidates", []):
+        content = cand.get("content", {})
+        for part in content.get("parts", []):
+            text = part.get("text")
+            if text:
+                return text
+    return ""
 
 
 class LPHandler(BaseHTTPRequestHandler):
@@ -46,7 +93,7 @@ class LPHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self) -> None:
-        if self.path != "/solve":
+        if self.path not in ("/solve", "/ai/parse", "/ai/report"):
             self._send_json(404, {"error": "Not found"})
             return
 
@@ -57,6 +104,135 @@ class LPHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             self._send_json(400, {"error": f"Invalid JSON: {exc}"})
             return
+
+        if self.path == "/ai/parse":
+            if not GEMINI_API_KEY:
+                self._send_json(500, {"error": "GEMINI_API_KEY not set"})
+                return
+
+            filename = data.get("filename", "problem.pdf")
+            file_data = data.get("file_data")
+            raw_text = data.get("text")
+
+            try:
+                if file_data:
+                    if "," in file_data:
+                        file_data = file_data.split(",", 1)[1]
+                    parts = [
+                        {"inline_data": {"mime_type": "application/pdf", "data": file_data}},
+                        {"text": "Extrae la funcion objetivo y restricciones del problema de programacion lineal."},
+                    ]
+                elif raw_text:
+                    parts = [{"text": raw_text}]
+                else:
+                    self._send_json(400, {"error": "Missing file_data or text"})
+                    return
+
+                schema = {
+                    "type": "OBJECT",
+                    "properties": {
+                        "name": {"type": "STRING"},
+                        "sense": {"type": "STRING", "enum": ["max", "min"]},
+                        "c": {"type": "ARRAY", "items": {"type": "NUMBER"}},
+                        "constraints": {
+                            "type": "ARRAY",
+                            "items": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "a": {"type": "ARRAY", "items": {"type": "NUMBER"}},
+                                    "op": {"type": "STRING", "enum": ["<=", ">=", "="]},
+                                    "b": {"type": "NUMBER"},
+                                },
+                                "required": ["a", "op", "b"],
+                                "propertyOrdering": ["a", "op", "b"],
+                            },
+                        },
+                        "summary": {"type": "STRING"},
+                    },
+                    "required": ["name", "sense", "c", "constraints", "summary"],
+                    "propertyOrdering": ["name", "sense", "c", "constraints", "summary"],
+                }
+
+                payload = {
+                    "contents": [
+                        {
+                            "parts": [
+                                {
+                                    "text": (
+                                        "Eres un asistente que extrae modelos de Programacion Lineal. "
+                                        "No resuelvas el problema. Devuelve solo JSON valido y agrega "
+                                        "un resumen breve del problema en 'summary'."
+                                    )
+                                }
+                            ]
+                        },
+                        {"parts": parts},
+                    ],
+                    "generationConfig": {
+                        "responseMimeType": "application/json",
+                        "responseSchema": schema,
+                    },
+                }
+
+                resp = _gemini_request_json(GEMINI_MODEL_PARSE, payload)
+                text = _extract_gemini_text(resp)
+                model_out = json.loads(text) if text else None
+                if not model_out:
+                    self._send_json(500, {"error": "Empty AI response"})
+                    return
+                self._send_json(200, {"model": model_out, "summary": model_out.get("summary", "")})
+                return
+            except urllib.error.HTTPError as exc:
+                detail = ""
+                try:
+                    detail = exc.read().decode("utf-8")
+                except Exception:
+                    detail = ""
+                self._send_json(500, {"error": f"Gemini HTTP error: {exc}. {detail}"})
+                return
+            except Exception as exc:
+                self._send_json(500, {"error": f"AI parse error: {exc}"})
+                return
+
+        if self.path == "/ai/report":
+            if not GEMINI_API_KEY:
+                self._send_json(500, {"error": "GEMINI_API_KEY not set"})
+                return
+            try:
+                problem_text = data.get("problem_text", "")
+                model = data.get("model", {})
+                result = data.get("result", {})
+                prompt = (
+                    "Redacta una respuesta breve y profesional en espanol que presente "
+                    "el analisis de sensibilidad con los resultados ya obtenidos. "
+                    "No resuelvas el problema. No repitas todo el enunciado. "
+                    "Incluye: valor objetivo, variables decision, holguras/excesos, "
+                    "precios sombra y una conclusion corta. Usa parrafos y listas claras. "
+                    "Usa negritas solo para titulos de seccion y valores numericos clave "
+                    "(valor objetivo, valores de variables, holguras/excesos y precios sombra). "
+                    "No uses negritas en oraciones completas.\n\n"
+                    f"Contexto del problema:\n{problem_text}\n\n"
+                    f"Modelo (JSON):\n{json.dumps(model, ensure_ascii=False)}\n\n"
+                    f"Resultados:\n{json.dumps(result, ensure_ascii=False)}"
+                )
+                payload = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                }
+                resp = _gemini_request_json(GEMINI_MODEL_REPORT, payload)
+                text = _extract_gemini_text(resp)
+                self._send_json(200, {"report": text})
+                return
+            except urllib.error.HTTPError as exc:
+                detail = ""
+                try:
+                    detail = exc.read().decode("utf-8")
+                except Exception:
+                    detail = ""
+                self._send_json(500, {"error": f"Gemini HTTP error: {exc}. {detail}"})
+                return
+            except Exception as exc:
+                self._send_json(500, {"error": f"AI report error: {exc}"})
+                return
 
         method = data.get("method", "auto")
         model = data.get("model")

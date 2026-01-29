@@ -2,6 +2,13 @@ import React, { useMemo, useState } from "react";
 
 const DEFAULT_VARS = 2;
 const DEFAULT_CONS = 3;
+const DEFAULT_PROBLEM_TEXT = `PROBLEMA EMPRESARIAL
+
+Una empresa comercializadora nacional dedicada a la distribucion de productos de consumo masivo opera con dos plantas de produccion y tres centros de distribucion que abastecen a distintos clientes ubicados en varias ciudades del pais. Actualmente, la empresa enfrenta elevados costos operativos, retrasos en las entregas y una gestion ineficiente de inventarios.
+
+Las decisiones relacionadas con la asignacion de produccion, transporte de productos, seleccion de rutas de distribucion y reposicion de inventarios se realizan de manera empirica, sin el apoyo de modelos matematicos que permitan optimizar los recursos disponibles. Como consecuencia, se presentan problemas de sobrestock en algunos centros de distribucion y desabastecimiento en otros, asi como un uso ineficiente de la red logistica.
+
+La empresa no cuenta con una herramienta computacional que integre modelos de optimizacion para analizar diferentes escenarios y evaluar el impacto de cambios en la demanda, costos de transporte y capacidades operativas, lo que dificulta la toma de decisiones estrategicas y afecta su competitividad y rentabilidad.`;
 
 function makeMatrix(rows, cols, fill = 0) {
   return Array.from({ length: rows }, () =>
@@ -24,6 +31,12 @@ function App() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [problemText, setProblemText] = useState(DEFAULT_PROBLEM_TEXT);
+  const [aiError, setAiError] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiReport, setAiReport] = useState("");
+  const [fileData, setFileData] = useState("");
+  const [fileName, setFileName] = useState("");
 
   const numberFormat = useMemo(
     () => new Intl.NumberFormat("es-EC", { maximumFractionDigits: 6 }),
@@ -134,6 +147,132 @@ function App() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function analyzeWithAI() {
+    setAiError("");
+    setAiLoading(true);
+    try {
+      const payload = fileData
+        ? { filename: fileName || "problem.pdf", file_data: fileData }
+        : { text: problemText };
+      const res = await fetch("http://127.0.0.1:8000/ai/parse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Error al analizar con IA");
+      }
+      const m = data.model;
+      if (!m) throw new Error("Respuesta vacia de la IA");
+      if (data.summary) {
+        setProblemText(data.summary);
+      }
+      const newVars = Array.isArray(m.c) ? m.c.length : 0;
+      const newCons = Array.isArray(m.constraints) ? m.constraints.length : 0;
+      setName(m.name || "LP");
+      setSense(m.sense || "max");
+      setNVars(Math.max(1, newVars));
+      setNCons(Math.max(1, newCons));
+      setC((m.c || []).map((v) => Number(v)));
+      setA(
+        (m.constraints || []).map((cst) =>
+          (cst.a || []).map((v) => Number(v))
+        )
+      );
+      setOps((m.constraints || []).map((cst) => cst.op || "<="));
+      setB((m.constraints || []).map((cst) => Number(cst.b)));
+      setResult(null);
+    } catch (err) {
+      setAiError(String(err));
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  async function generateReport() {
+    setAiError("");
+    setAiReport("");
+    if (!result) {
+      setAiError("Primero resuelve el modelo.");
+      return;
+    }
+    setAiLoading(true);
+    try {
+      const res = await fetch("http://127.0.0.1:8000/ai/report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          problem_text: problemText,
+          model: modelJson,
+          result,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Error al generar informe");
+      }
+      setAiReport(data.report || "");
+    } catch (err) {
+      setAiError(String(err));
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  function renderInline(text) {
+    const parts = text.split("**");
+    const nodes = [];
+    for (let i = 0; i < parts.length; i++) {
+      const chunk = parts[i];
+      if (!chunk) continue;
+      if (i % 2 === 1) {
+        nodes.push(<strong key={`b-${i}`}>{chunk}</strong>);
+      } else {
+        nodes.push(<span key={`t-${i}`}>{chunk}</span>);
+      }
+    }
+    return nodes.length ? nodes : [text];
+  }
+
+  function cleanLine(line) {
+    return line.replace(/^\*\s*/, "").replace(/\*$/g, "").trim();
+  }
+
+  function renderReport(text) {
+    if (!text) return null;
+    const lines = text.split(/\r?\n/);
+    const blocks = [];
+    let list = [];
+    const flushList = () => {
+      if (list.length) {
+        blocks.push(
+          <ul key={`ul-${blocks.length}`}>
+            {list.map((item, idx) => (
+              <li key={`li-${idx}`}>{renderInline(item)}</li>
+            ))}
+          </ul>
+        );
+        list = [];
+      }
+    };
+    lines.forEach((line) => {
+      const trimmed = cleanLine(line);
+      if (!trimmed) {
+        flushList();
+        return;
+      }
+      if (trimmed.startsWith("*") || trimmed.startsWith("-")) {
+        list.push(trimmed.replace(/^[-*]\s*/, ""));
+        return;
+      }
+      flushList();
+      blocks.push(<p key={`p-${blocks.length}`}>{renderInline(trimmed)}</p>);
+    });
+    flushList();
+    return blocks;
   }
 
   return (
@@ -254,6 +393,48 @@ function App() {
               </button>
             </div>
           </header>
+
+          <section className="panel">
+            <h2>IA: carga y analisis del problema</h2>
+            <div className="row">
+              <label>
+                Subir PDF (texto, no escaneado)
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  onChange={(e) => {
+                    const file = e.target.files && e.target.files[0];
+                    if (!file) return;
+                    setFileName(file.name);
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      setFileData(String(reader.result || ""));
+                    };
+                    reader.readAsDataURL(file);
+                  }}
+                />
+              </label>
+              <button className="primary" onClick={analyzeWithAI} disabled={aiLoading}>
+                {aiLoading ? "Analizando..." : "Analizar con IA"}
+              </button>
+            </div>
+            <div className="section">
+              <label>
+                Contexto del problema (texto)
+                <textarea
+                  rows="8"
+                  value={problemText}
+                  onChange={(e) => setProblemText(e.target.value)}
+                />
+              </label>
+              <div className="row">
+                <button className="ghost" onClick={analyzeWithAI} disabled={aiLoading}>
+                  {aiLoading ? "Analizando..." : "Analizar texto con IA"}
+                </button>
+              </div>
+            </div>
+            {aiError && <div className="error">IA: {aiError}</div>}
+          </section>
 
           <section className="panel">
             <div className="row">
@@ -441,6 +622,17 @@ function App() {
                 )}
               </div>
             )}
+            <div className="section">
+              <button className="primary" onClick={generateReport} disabled={aiLoading}>
+                {aiLoading ? "Generando..." : "Generar informe (IA)"}
+              </button>
+              {aiReport && (
+                <div className="report">
+                  <h3>Analisis de sensibilidad</h3>
+                  <div className="report-text">{renderReport(aiReport)}</div>
+                </div>
+              )}
+            </div>
           </section>
 
           <section className="panel">

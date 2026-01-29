@@ -3,7 +3,7 @@ from pathlib import Path
 
 # Ensure "src" resolves to linear_programming/src.
 ROOT = Path(__file__).resolve().parent
-LP_ROOT = ROOT / "linear_programming"
+LP_ROOT = ROOT
 if str(LP_ROOT) not in sys.path:
     sys.path.insert(0, str(LP_ROOT))
 
