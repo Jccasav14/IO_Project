@@ -1,4 +1,4 @@
-﻿# IO_Project
+# IO_Project
 
 Proyecto de Investigacion Operativa. Incluye un modulo de Programacion Lineal
 implementado desde cero (sin librerias de optimizacion) y una interfaz web para
