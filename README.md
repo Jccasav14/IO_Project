@@ -21,8 +21,8 @@ frontend con el solver.
 - `linear_programming/src/core/lp/`: implementaciones de los metodos.
 - `linear_programming/tests/`: pruebas unitarias.
 - `linear_programming/data/templates/`: ejemplo JSON de modelo.
-- `run_lp_cli.py`: ejecutable CLI interactivo.
-- `lp_api_server.py`: servidor HTTP local (stdlib) para el frontend.
+- `linear_programming/run_lp_cli.py`: ejecutable CLI interactivo.
+- `linear_programming/lp_api_server.py`: servidor HTTP local (stdlib) para el frontend.
 - `frontend/`: app React (Vite).
 
 ## Requisitos
@@ -35,14 +35,14 @@ frontend con el solver.
 ### 1) CLI interactivo
 
 ```powershell
-python run_lp_cli.py
+python linear_programming/run_lp_cli.py
 ```
 
 ### 2) Servidor + Frontend
 
 Terminal 1:
 ```powershell
-python lp_api_server.py
+python linear_programming/lp_api_server.py
 ```
 
 Terminal 2:
