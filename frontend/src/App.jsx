@@ -166,6 +166,79 @@ function App() {
     { u: "C", v: "D", w: 1, capacity: 0, cost: 0 },
     { u: "D", v: "E", w: 4, capacity: 0, cost: 0 },
   ]);
+
+
+  // Transporte
+  const [tRows, setTRows] = useState(3);
+  const [tCols, setTCols] = useState(3);
+  const [tCosts, setTCosts] = useState(makeMatrix(3, 3, 0));
+  const [tSupply, setTSupply] = useState(Array.from({ length: 3 }, () => 0));
+  const [tDemand, setTDemand] = useState(Array.from({ length: 3 }, () => 0));
+  const [tOptimize, setTOptimize] = useState(true);
+  const [tResult, setTResult] = useState(null);
+  const [tLoading, setTLoading] = useState(false);
+  const [tError, setTError] = useState("");
+  const ResultCard = ({ title, costLabel = "Costo", cost, highlight = false, children }) => (
+    <div
+      style={{
+        marginTop: 16,
+        marginBottom: 18,
+        padding: "16px 18px",
+        borderRadius: 14,
+        background: highlight ? "#e6f4ea" : "#fafafa",
+        border: highlight ? "2px solid #2f855a" : "1px solid #e3e3e3",
+        boxShadow: highlight ? "0 6px 16px rgba(0,0,0,0.10)" : "0 4px 10px rgba(0,0,0,0.06)",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+        <h4 style={{ margin: 0, fontSize: "1.05rem" }}>
+          {highlight ? "⭐ " : ""}{title}
+        </h4>
+
+        <div style={{ fontSize: "0.95rem" }}>
+          <b>{costLabel}:</b>{" "}
+          <span style={{ fontSize: "1.05rem" }}>{cost ?? "—"}</span>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 12 }}>{children}</div>
+    </div>
+  );
+
+  const TransportTable = ({ allocation, emptySymbol = "–" }) => {
+    if (!Array.isArray(allocation) || allocation.length === 0) {
+      return <p className="empty">Sin tabla.</p>;
+    }
+
+    const cols = allocation[0]?.length || 0;
+
+    return (
+      <div className="table-wrap">
+        <table className="matrix">
+          <thead>
+            <tr>
+              <th></th>
+              {Array.from({ length: cols }, (_, j) => (
+                <th key={`d-${j}`}>D{j + 1}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {allocation.map((row, i) => (
+              <tr key={`r-${i}`}>
+                <th>O{i + 1}</th>
+                {row.map((val, j) => (
+                  <td key={`v-${i}-${j}`}>{Number(val) > 0 ? val : emptySymbol}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+
   const [netResult, setNetResult] = useState(null);
   const [netError, setNetError] = useState("");
   const [netLoading, setNetLoading] = useState(false);
@@ -712,10 +785,12 @@ function App() {
                   Ir a Programación Lineal
                 </button>
               </div>
-              <div className="module-card disabled">
+              <div className="module-card">
                 <h3>Transporte</h3>
                 <p>Costo mínimo, Esquina noroeste, Vogel, Optimalidad</p>
-                <button disabled>Próximamente</button>
+                <button className="primary" onClick={() => setPage("transport")}>
+                  Ir a Transporte
+                </button>
               </div>
               <div className="module-card">
                 <h3>Redes</h3>
@@ -1040,8 +1115,8 @@ function App() {
                           {i === 0
                             ? "Z"
                             : Array.isArray(result.basic_vars)
-                            ? result.basic_vars[i - 1] || `R${i}`
-                            : `R${i}`}
+                              ? result.basic_vars[i - 1] || `R${i}`
+                              : `R${i}`}
                         </td>
                         {row.slice(0, -1).map((v, j) => (
                           <td key={`c-${i}-${j}`}>{fmt(v)}</td>
@@ -1057,6 +1132,347 @@ function App() {
         </>
       )}
 
+
+
+      {page === "transport" && (
+        <>
+          <header className="hero">
+            <div>
+              <h1>Solucionador de Transporte</h1>
+              <p>
+                Calcula soluciones iniciales con Esquina Noroeste, Costo Mínimo y Vogel (VAM),
+                y (opcionalmente) optimiza hasta el óptimo con Stepping-Stone.
+              </p>
+              <button className="ghost" onClick={() => setPage("home")}>
+                ← Volver al inicio
+              </button>
+            </div>
+
+            <div className="meta">
+              <label style={{ color: "#fff"}}>
+                Optimización
+                <div style={{ marginTop: 6 }}>
+                  <label style={{ display: "flex", gap: 8, alignItems: "center", color:"#fff"}}>
+                    <input
+                      type="checkbox"
+                      checked={tOptimize}
+                      onChange={(e) => setTOptimize(e.target.checked)}
+                    />
+                    Optimizar (Simplex de Transporte)
+                  </label>
+                </div>
+              </label>
+
+            </div>
+          </header>
+
+          <div className="panel">
+
+          <div className="grid-2">
+            <div>
+              <h3>Dimensiones</h3>
+              <div className="row">
+                <label>Orígenes</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={tRows}
+                  onChange={(e) => {
+                    const r = Math.max(1, Number(e.target.value || 1));
+                    setTRows(r);
+                    setTCosts((prev) => {
+                      const next = makeMatrix(r, tCols, 0);
+                      for (let i = 0; i < Math.min(prev.length, r); i++) {
+                        for (let j = 0; j < Math.min(prev[0]?.length || 0, tCols); j++) {
+                          next[i][j] = prev[i][j];
+                        }
+                      }
+                      return next;
+                    });
+                    setTSupply((prev) => {
+                      const next = Array.from({ length: r }, (_, i) => prev[i] ?? 0);
+                      return next;
+                    });
+                  }}
+                />
+              </div>
+              <div className="row">
+                <label>Destinos</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={tCols}
+                  onChange={(e) => {
+                    const c = Math.max(1, Number(e.target.value || 1));
+                    setTCols(c);
+                    setTCosts((prev) => {
+                      const next = makeMatrix(tRows, c, 0);
+                      for (let i = 0; i < Math.min(prev.length, tRows); i++) {
+                        for (let j = 0; j < Math.min(prev[0]?.length || 0, c); j++) {
+                          next[i][j] = prev[i][j];
+                        }
+                      }
+                      return next;
+                    });
+                    setTDemand((prev) => {
+                      const next = Array.from({ length: c }, (_, j) => prev[j] ?? 0);
+                      return next;
+                    });
+                  }}
+                />
+              </div>
+
+              <button
+                className="primary"
+                onClick={async () => {
+                  setTError("");
+                  setTResult(null);
+                  setTLoading(true);
+                  try {
+                    const payload = {
+                      method: "compare",
+                      model: { supply: tSupply, demand: tDemand, costs: tCosts },
+                      options: { optimize: tOptimize, compare_all: true },
+                    };
+                    const res = await fetch("http://127.0.0.1:8002/solve/transport", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(payload),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data?.message || data?.error || "Error");
+                    setTResult(data);
+                  } catch (err) {
+                    setTError(String(err?.message || err));
+                  } finally {
+                    setTLoading(false);
+                  }
+                }}
+                disabled={tLoading}
+              >
+                {tLoading ? "Resolviendo..." : "Resolver"}
+              </button>
+
+              {tError && <div className="error">{tError}</div>}
+            </div>
+
+            <div>
+              <h3>Datos</h3>
+
+              <div className="table-wrap">
+                <table className="matrix">
+                  <thead>
+                    <tr>
+                      <th></th>
+                      {Array.from({ length: tCols }, (_, j) => (
+                        <th key={`d-${j}`}>D{j + 1}</th>
+                      ))}
+                      <th>Oferta</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: tRows }, (_, i) => (
+                      <tr key={`r-${i}`}>
+                        <th>O{i + 1}</th>
+                        {Array.from({ length: tCols }, (_, j) => (
+                          <td key={`c-${i}-${j}`}>
+                            <input
+                              value={tCosts[i]?.[j] ?? 0}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setTCosts((prev) => {
+                                  const next = prev.map((row) => row.slice());
+                                  next[i][j] = v === "" ? 0 : v;
+                                  return next;
+                                });
+                              }}
+                              placeholder="0 / M"
+                            />
+                          </td>
+                        ))}
+                        <td>
+                          <input
+                            value={tSupply[i] ?? 0}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setTSupply((prev) => {
+                                const next = prev.slice();
+                                next[i] = v === "" ? 0 : Number(v);
+                                return next;
+                              });
+                            }}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                    <tr>
+                      <th>Demanda</th>
+                      {Array.from({ length: tCols }, (_, j) => (
+                        <td key={`dem-${j}`}>
+                          <input
+                            value={tDemand[j] ?? 0}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setTDemand((prev) => {
+                                const next = prev.slice();
+                                next[j] = v === "" ? 0 : Number(v);
+                                return next;
+                              });
+                            }}
+                          />
+                        </td>
+                      ))}
+                      <td></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {tResult && (
+                <div className="result">
+                    <h3>Resultado</h3>
+
+                    {/* MODO COMPARACIÓN */}
+                    {tResult.compare ? (
+                      <>
+                        <p>
+                          <b>Estado:</b> {tResult.status}
+                        </p>
+
+                        {/* Tabla resumen */}
+                        <div className="table-wrap" style={{ marginTop: 10 }}>
+                          <table className="tableau">
+                            <thead>
+                              <tr>
+                                <th>Método</th>
+                                <th>Costo</th>
+                                <th>Notas</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr>
+                                <td>Esquina Noroeste</td>
+                                <td>{tResult.initials?.northwest?.total_cost ?? "—"}</td>
+                                <td>{tResult.initials?.northwest?.has_M ? "Contiene M" : ""}</td>
+                              </tr>
+                              <tr>
+                                <td>Costo Mínimo</td>
+                                <td>{tResult.initials?.min_cost?.total_cost ?? "—"}</td>
+                                <td>{tResult.initials?.min_cost?.has_M ? "Contiene M" : ""}</td>
+                              </tr>
+                              <tr>
+                                <td>Vogel (VAM)</td>
+                                <td>{tResult.initials?.vogel?.total_cost ?? "—"}</td>
+                                <td>{tResult.initials?.vogel?.has_M ? "Contiene M" : ""}</td>
+                              </tr>
+                              <tr>
+                                <td><b>Óptimo</b></td>
+                                <td><b>{tResult.optimal?.total_cost ?? "—"}</b></td>
+                                <td>
+                                  {tResult.optimal?.has_M ? "Contiene M" : ""}
+                                  {tResult.optimal?.started_from ? ` · Inicio: ${tResult.optimal.started_from}` : ""}
+                                  {Number.isFinite(tResult.optimal?.iterations) ? ` · It: ${tResult.optimal.iterations}` : ""}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* 3 tarjetas iniciales (AHORA el .map solo retorna ResultCard) */}
+                        {[
+                          ["northwest", "Esquina Noroeste"],
+                          ["min_cost", "Costo Mínimo"],
+                          ["vogel", "Vogel (VAM)"],
+                        ].map(([key, title]) => {
+                          const item = tResult.initials?.[key];
+                          return (
+                            <ResultCard
+                              key={key}
+                              title={title}
+                              cost={item?.total_cost}
+                            >
+                              <TransportTable allocation={item?.allocation} />
+                              {item?.has_M && (
+                                <p className="hint" style={{ marginTop: 8 }}>Contiene M (penalización).</p>
+                              )}
+                            </ResultCard>
+                          );
+                        })}
+
+                        {/* Óptimo como tarjeta destacada */}
+                        <ResultCard
+                          title="Óptimo (Stepping-Stone)"
+                          costLabel="Costo óptimo"
+                          cost={tResult.optimal?.total_cost}
+                          highlight
+                        >
+                          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 10 }}>
+                            <span>
+                              <b>Iteraciones:</b>{" "}
+                              {Number.isFinite(tResult.optimal?.iterations) ? tResult.optimal.iterations : "—"}
+                            </span>
+                            <span><b>Inició desde:</b> {tResult.optimal?.started_from ?? "—"}</span>
+                            {tResult.optimal?.has_M && <span><b>Nota:</b> Contiene M</span>}
+                          </div>
+
+                          <TransportTable allocation={tResult.optimal?.allocation} />
+                        </ResultCard>
+
+                        {/* Mensajes de balanceo */}
+                        {(tResult.extra?.balanced?.added_dummy_origin || tResult.extra?.balanced?.added_dummy_destination) && (
+                          <div style={{ marginTop: 8 }}>
+                            {tResult.extra?.balanced?.added_dummy_origin && (
+                              <p className="hint">Se agregó un Origen ficticio para balancear.</p>
+                            )}
+                            {tResult.extra?.balanced?.added_dummy_destination && (
+                              <p className="hint">Se agregó un Destino ficticio para balancear.</p>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                    /* MODO SIMPLE (por si el backend responde sin compare) */
+                    <>
+                      <p>
+                        <b>Estado:</b> {tResult.status} &nbsp; | &nbsp;
+                        <b>Método:</b> {tResult.method_used}
+                      </p>
+                      <p>
+                        <b>Costo Total:</b> {tResult.total_cost} {tResult.has_M ? "(contiene M)" : ""}
+                      </p>
+
+                      <div className="table-wrap">
+                        <table className="matrix">
+                          <thead>
+                            <tr>
+                              <th></th>
+                              {Array.from({ length: tResult.allocation?.[0]?.length || 0 }, (_, j) => (
+                                <th key={`ad-${j}`}>D{j + 1}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(tResult.allocation || []).map((row, i) => (
+                              <tr key={`ar-${i}`}>
+                                <th>O{i + 1}</th>
+                                {row.map((val, j) => (
+                                  <td key={`av-${i}-${j}`}>{Number(val) > 0 ? val : "."}</td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+            </div>
+          </div>
+        </div>
+        </>
+      )}
 
       {page === "networks" && (
         <>
