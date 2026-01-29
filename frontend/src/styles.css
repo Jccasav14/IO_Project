@@ -288,11 +288,18 @@ button.primary:disabled {
   opacity: 0.65;
 }
 
+/* Botón contorno */
 .ghost {
   background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+
+/* En cabeceras verdes, el botón debe verse claro */
+.hero .ghost,
+.home-hero .ghost {
   border: 1px solid rgba(255, 255, 255, 0.7);
   color: #fff;
-  margin-top: 8px;
 }
 
 @media (max-width: 880px) {
@@ -302,4 +309,119 @@ button.primary:disabled {
   .home-hero {
     grid-template-columns: 1fr;
   }
+}
+
+
+/* Redes */
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  align-items: end;
+  margin-top: 12px;
+}
+
+label.check {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding-top: 22px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0 10px;
+}
+
+.details {
+  margin-top: 14px;
+}
+
+.details summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--accent);
+  font-family: "Trebuchet MS", Arial, sans-serif;
+}
+
+.kv {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff6df;
+  margin-top: 10px;
+}
+
+.tableau input {
+  width: 100%;
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.hint {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(254, 248, 231, 0.9);
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.net-viz {
+  width: 100%;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff8ea;
+  padding: 12px;
+}
+
+.net-svg {
+  width: 100%;
+  height: auto;
+  color: #8a7c63;
+}
+
+.edge {
+  stroke: #8a7c63;
+  stroke-width: 2.2;
+  opacity: 0.75;
+}
+
+.edge-hi {
+  stroke: var(--accent);
+  stroke-width: 4;
+  opacity: 0.95;
+}
+
+.edge-flow {
+  stroke: var(--accent-2);
+  stroke-width: 3.4;
+  opacity: 0.95;
+}
+
+.edge-label {
+  font-size: 12px;
+  fill: #433a2c;
+  paint-order: stroke;
+  stroke: rgba(255, 248, 234, 0.9);
+  stroke-width: 4px;
+}
+
+.node {
+  fill: #fffdf7;
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.node-label {
+  font-size: 13px;
+  font-weight: 700;
+  fill: #1f1f1f;
 }

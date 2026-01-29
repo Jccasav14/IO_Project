@@ -1,0 +1,15 @@
+{
+  "nodes": ["s", "a", "b", "c", "t"],
+  "edges": [
+    {"u": "s", "v": "a", "capacity": 10},
+    {"u": "s", "v": "b", "capacity": 5},
+    {"u": "a", "v": "b", "capacity": 15},
+    {"u": "a", "v": "c", "capacity": 9},
+    {"u": "b", "v": "c", "capacity": 8},
+    {"u": "c", "v": "t", "capacity": 10},
+    {"u": "b", "v": "t", "capacity": 7}
+  ],
+  "source": "s",
+  "sink": "t",
+  "directed": true
+}

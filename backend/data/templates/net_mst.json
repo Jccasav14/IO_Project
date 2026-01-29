@@ -1,0 +1,15 @@
+{
+  "nodes": ["A", "B", "C", "D", "E", "F"],
+  "edges": [
+    {"u": "A", "v": "B", "weight": 4},
+    {"u": "A", "v": "F", "weight": 2},
+    {"u": "B", "v": "C", "weight": 6},
+    {"u": "B", "v": "F", "weight": 5},
+    {"u": "C", "v": "D", "weight": 3},
+    {"u": "C", "v": "F", "weight": 1},
+    {"u": "D", "v": "E", "weight": 7},
+    {"u": "E", "v": "F", "weight": 4},
+    {"u": "D", "v": "F", "weight": 8}
+  ],
+  "directed": false
+}
