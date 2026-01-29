@@ -40,13 +40,17 @@ python linear_programming/run_lp_cli.py
 
 ### 2) Servidor + Frontend
 
-Terminal 1:
 ```powershell
+Copie el archivo `.env.example` como `.env` y complete su API key:
+```
+
+Terminal 1:
+```
 python linear_programming/lp_api_server.py
 ```
 
 Terminal 2:
-```powershell
+```
 cd frontend
 npm install
 npm run dev
@@ -80,3 +84,5 @@ python -m pytest linear_programming\tests
 - El modo Dual retorna la solucion del dual; el frontend muestra tambien
   holguras y precios sombra a partir del dual.
 - No se usan librerias de optimizacion, SDKs ni APIs externas.
+- La IA se usa solo para interpretar el enunciado y redactar informes.
+- El PDF debe contener texto (no escaneado). No se usa OCR.
