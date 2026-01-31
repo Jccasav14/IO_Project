@@ -291,6 +291,7 @@ class LPHandler(BaseHTTPRequestHandler):
         row0 = None
         basic_vars = None
         nonbasic_vars = None
+        tableau_history = None
         if primal_res.extra:
             tableau = primal_res.extra.get("final_tableau")
             basis = primal_res.extra.get("basis")
@@ -298,6 +299,7 @@ class LPHandler(BaseHTTPRequestHandler):
             row0 = primal_res.extra.get("row0")
             basic_vars = primal_res.extra.get("basic_vars")
             nonbasic_vars = primal_res.extra.get("nonbasic_vars")
+            tableau_history = primal_res.extra.get("tableau_history")
 
         payload = {
             "status": primal_res.status,
@@ -314,6 +316,7 @@ class LPHandler(BaseHTTPRequestHandler):
             "row0": row0,
             "basic_vars": basic_vars,
             "nonbasic_vars": nonbasic_vars,
+            "tableau_history": tableau_history,
         }
         self._send_json(200, payload)
 

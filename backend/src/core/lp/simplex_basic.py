@@ -63,7 +63,8 @@ def _final_info(T: List[List[float]], basis: List[int], var_names: List[str]) ->
 def solve_simplex_basic(model: LPModel, log: bool=False) -> LPSolution:
     build = build_basic_tableau(model)
     try:
-        Tfinal, bfinal, it = simplex_max(build.T, build.basis, log=log)
+        history = []
+        Tfinal, bfinal, it = simplex_max(build.T, build.basis, log=log, history=history)
     except UnboundedError as e:
         return LPSolution(status="UNBOUNDED", x=[0.0]*build.n_original, objective_value=float("inf"),
                           iterations=0, message=str(e), method_used="simplex")
@@ -73,5 +74,10 @@ def solve_simplex_basic(model: LPModel, log: bool=False) -> LPSolution:
     if model.sense == "min":
         z = -z
     extra = _final_info(Tfinal, bfinal, build.var_names)
+    extra["tableau_history"] = {
+        "label": "Simplex",
+        "var_names": build.var_names,
+        "items": history,
+    }
     return LPSolution(status="OPTIMAL", x=x, objective_value=z, iterations=it, message="OK",
                       method_used="simplex", extra=extra)

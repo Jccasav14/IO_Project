@@ -431,6 +431,56 @@ function App() {
     });
   }
 
+  function rowLabel(i, basis, varNames) {
+    if (i === 0) return "Z";
+    if (Array.isArray(basis) && Array.isArray(varNames)) {
+      const idx = basis[i - 1];
+      if (Number.isInteger(idx) && idx >= 0 && idx < varNames.length) {
+        return varNames[idx];
+      }
+    }
+    return `R${i}`;
+  }
+
+  function renderTableau(tableau, varNames, basis) {
+    if (!Array.isArray(tableau) || tableau.length === 0) return <div className="empty">Sin tabla.</div>;
+    return (
+      <div className="table-wrap">
+        <table className="tableau">
+          <thead>
+            <tr>
+              <th>Fila</th>
+              {Array.isArray(varNames) && varNames.map((n) => <th key={`h-${n}`}>{n}</th>)}
+              <th>Solucion</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tableau.map((row, i) => (
+              <tr key={`t-${i}`}>
+                <td>{rowLabel(i, basis, varNames)}</td>
+                {row.slice(0, -1).map((v, j) => (
+                  <td key={`t-${i}-${j}`}>{fmt(v)}</td>
+                ))}
+                <td>{fmt(i === 0 ? -row[row.length - 1] : row[row.length - 1])}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  function formatRowOps(rowOps) {
+    if (!Array.isArray(rowOps) || rowOps.length === 0) return [];
+    return rowOps;
+  }
+
+  const historyGroups = useMemo(() => {
+    const h = result?.tableau_history;
+    if (!h) return [];
+    return Array.isArray(h) ? h : [h];
+  }, [result]);
+
   const modelJson = useMemo(() => {
     const constraints = A.map((row, i) => ({
       a: row.map(Number),
@@ -1091,6 +1141,63 @@ function App() {
           <section className="panel">
             <h2>Modelo (JSON)</h2>
             <pre className="code">{JSON.stringify(modelJson, null, 2)}</pre>
+          </section>
+
+          <section className="panel">
+            <h2>Iteraciones</h2>
+            {!historyGroups.length ? (
+              <div className="empty">Sin iteraciones disponibles.</div>
+            ) : (
+              historyGroups.map((group, gi) => (
+                <div key={`hg-${gi}`} className="result-box">
+                  <h3>{group.label || `Fase ${gi + 1}`}</h3>
+                  {Array.isArray(group.items) && group.items.length ? (
+                    group.items.map((item) => {
+                      const varNames = group.var_names || [];
+                      const enterName =
+                        Number.isInteger(item.enter) && item.enter >= 0 && item.enter < varNames.length
+                          ? varNames[item.enter]
+                          : null;
+                      const leaveName =
+                        Number.isInteger(item.leave_var) && item.leave_var >= 0 && item.leave_var < varNames.length
+                          ? varNames[item.leave_var]
+                          : null;
+                      const pivotInfo =
+                        enterName || leaveName
+                          ? ` (entra ${enterName || "?"}${leaveName ? `, sale ${leaveName}` : ""})`
+                          : "";
+
+                      const isPrep = Array.isArray(item.row_ops) && item.row_ops.length > 0 && item.iteration === 0;
+                      const title = isPrep ? "Preparacion Fase II" : `Iteracion ${item.iteration}`;
+                      return (
+                        <details className="details" key={`it-${group.label}-${item.iteration}`}>
+                          <summary>{title}{pivotInfo}</summary>
+                          {item.pivot && (
+                            <div className="kv" style={{ marginTop: 10 }}>
+                              <div><strong>Pivote:</strong> fila {item.pivot.row}, col {item.pivot.col}</div>
+                              <div><strong>Valor pivote:</strong> {fmt(item.pivot.value)}</div>
+                            </div>
+                          )}
+                          {formatRowOps(item.row_ops).length > 0 && (
+                            <div style={{ marginTop: 8 }}>
+                              <strong>Operaciones de fila:</strong>
+                              <ul className="list">
+                                {formatRowOps(item.row_ops).map((op, idx) => (
+                                  <li key={`op-${item.iteration}-${idx}`}>{op}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {renderTableau(item.tableau, varNames, item.basis)}
+                        </details>
+                      );
+                    })
+                  ) : (
+                    <div className="empty">Sin iteraciones.</div>
+                  )}
+                </div>
+              ))
+            )}
           </section>
 
           <section className="panel">

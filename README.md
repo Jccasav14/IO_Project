@@ -1,55 +1,67 @@
 # IO_Project
 
-Proyecto de Investigacion Operativa. Incluye un modulo de Programacion Lineal
-implementado desde cero (sin librerias de optimizacion) y una interfaz web para
-probar modelos. Tambien incluye un CLI y un servidor HTTP local para conectar el
-frontend con el solver.
+Proyecto de Investigacion Operativa. Incluye modulos de Programacion Lineal, Redes y Transporte implementados desde cero (sin librerias de optimizacion), mas una interfaz web para probar modelos. Tambien incluye CLI y servidores HTTP locales para conectar el frontend con los solvers.
 
 ## Que hace el sistema
 
-- Resuelve problemas de Programacion Lineal con:
+- **Programacion Lineal**
   - Simplex basico (solo <= y b>=0)
-  - Gran M
+  - Big M
   - Dos Fases (recomendado)
   - Dual (construye el dual y lo resuelve)
-- Muestra resultados, holguras/excesos, precios sombra y tabla final.
-- Tiene una pagina principal con informacion del proyecto y una pagina de
-  Programacion Lineal para ingresar el modelo.
+  - Muestra holguras/excesos, precios sombra, tabla final e iteraciones con pivote y operaciones de fila.
+- **Redes**
+  - Ruta mas corta (Dijkstra)
+  - Arbol de expansion minima (Kruskal)
+  - Flujo maximo (Edmonds-Karp)
+  - Flujo de costo minimo (SSAP)
+- **Transporte**
+  - Esquina Noroeste, Costo Minimo y Vogel (VAM)
+  - Optimizacion con Stepping-Stone
 
 ## Estructura principal
 
-- `linear_programming/src/core/lp/`: implementaciones de los metodos.
-- `linear_programming/tests/`: pruebas unitarias.
-- `linear_programming/data/templates/`: ejemplo JSON de modelo.
-- `linear_programming/run_lp_cli.py`: ejecutable CLI interactivo.
-- `linear_programming/lp_api_server.py`: servidor HTTP local (stdlib) para el frontend.
+- `backend/src/core/lp/`: metodos de Programacion Lineal.
+- `backend/src/core/networks/`: algoritmos de Redes.
+- `backend/src/core/transport/`: metodos de Transporte.
+- `backend/`: CLIs y servidores HTTP locales.
 - `frontend/`: app React (Vite).
 
 ## Requisitos
 
-- Python 3.10+ (probado con 3.14)
+- Python 3.10+
 - Node.js 18+ (para el frontend)
 
 ## Uso rapido
 
-### 1) CLI interactivo
+### 1) CLIs interactivos
 
 ```powershell
-python linear_programming/run_lp_cli.py
+python backend/run_lp_cli.py
+python backend/run_networks_cli.py
+python backend/run_transport_cli.py
 ```
 
-### 2) Servidor + Frontend
+### 2) Servidores + Frontend
 
-```powershell
-Copie el archivo `.env.example` como `.env` y complete su API key:
+Si vas a usar IA (parseo de PDF y reporte), copia `.env.example` a `.env` y completa tu API key.
+
+Terminal 1 (LP):
+```
+python backend/lp_api_server.py
 ```
 
-Terminal 1:
+Terminal 2 (Redes):
 ```
-python linear_programming/lp_api_server.py
+python backend/network_api_server.py
 ```
 
-Terminal 2:
+Terminal 3 (Transporte):
+```
+python backend/transport_api_server.py
+```
+
+Terminal 4 (Frontend):
 ```
 cd frontend
 npm install
@@ -59,30 +71,5 @@ npm run dev
 ### 3) Pruebas
 
 ```powershell
-python -m pytest linear_programming\tests
+python -m pytest backend\tests
 ```
-
-## Formato del modelo (JSON)
-
-```json
-{
-  "name": "LP_demo",
-  "sense": "max",
-  "c": [3, 5],
-  "constraints": [
-    { "a": [1, 0], "op": "<=", "b": 4 },
-    { "a": [0, 2], "op": "<=", "b": 12 },
-    { "a": [3, 2], "op": "<=", "b": 18 }
-  ]
-}
-```
-
-## Notas importantes
-
-- El solver asume x >= 0 para las variables.
-- Big M y Dos Fases resuelven modelos con <=, >= y =.
-- El modo Dual retorna la solucion del dual; el frontend muestra tambien
-  holguras y precios sombra a partir del dual.
-- No se usan librerias de optimizacion, SDKs ni APIs externas.
-- La IA se usa solo para interpretar el enunciado y redactar informes.
-- El PDF debe contener texto (no escaneado). No se usa OCR.

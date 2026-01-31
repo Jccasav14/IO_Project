@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import List, Tuple, Optional
+from typing import List
 
 from .model import LPModel, LPSolution, Constraint
 from .simplex import simplex_max, extract_basic_solution, pivot, EPS
@@ -43,8 +43,8 @@ def build_phase1_tableau(model: LPModel) -> TwoPhaseBuild:
     surplus_start = n + slack
     artificial_start = n + slack + surplus
 
-    T = [[0.0]*width for _ in range(m+1)]
-    basis = [-1]*m
+    T = [[0.0] * width for _ in range(m + 1)]
+    basis = [-1] * m
     artificial_cols: List[int] = []
 
     s_i = e_i = a_i = 0
@@ -56,7 +56,7 @@ def build_phase1_tableau(model: LPModel) -> TwoPhaseBuild:
         if cst.op == "<=":
             col_s = slack_start + s_i
             T[i][col_s] = 1.0
-            basis[i-1] = col_s
+            basis[i - 1] = col_s
             s_i += 1
         elif cst.op == ">=":
             col_e = surplus_start + e_i
@@ -64,13 +64,13 @@ def build_phase1_tableau(model: LPModel) -> TwoPhaseBuild:
             e_i += 1
             col_a = artificial_start + a_i
             T[i][col_a] = 1.0
-            basis[i-1] = col_a
+            basis[i - 1] = col_a
             artificial_cols.append(col_a)
             a_i += 1
         elif cst.op == "=":
             col_a = artificial_start + a_i
             T[i][col_a] = 1.0
-            basis[i-1] = col_a
+            basis[i - 1] = col_a
             artificial_cols.append(col_a)
             a_i += 1
 
@@ -85,12 +85,12 @@ def build_phase1_tableau(model: LPModel) -> TwoPhaseBuild:
     for col_a in artificial_cols:
         T[0][col_a] = 1.0
 
-    # Canónica: si una artificial está básica, eliminarla de la fila 0
+    # Canonica: si una artificial esta basica, eliminarla de la fila 0
     for row_idx, bcol in enumerate(basis, start=1):
         if bcol in artificial_cols:
             factor = T[0][bcol]
             if abs(factor) > EPS:
-                T[0] = [T[0][j] - factor*T[row_idx][j] for j in range(width)]
+                T[0] = [T[0][j] - factor * T[row_idx][j] for j in range(width)]
 
     return TwoPhaseBuild(T=T, basis=basis, n_original=n, artificial_cols=artificial_cols, var_names=var_names)
 
@@ -128,7 +128,13 @@ def _final_info(T: List[List[float]], basis: List[int], var_names: List[str]) ->
         "row0": T[0][:-1],
     }
 
-def _rebuild_phase2_objective(T: List[List[float]], basis: List[int], c: List[float], sense: str) -> None:
+def _rebuild_phase2_objective(
+    T: List[List[float]],
+    basis: List[int],
+    c: List[float],
+    sense: str,
+    ops: List[str] | None = None,
+) -> None:
     c_vec = c[:]
     if sense == "min":
         c_vec = [-v for v in c_vec]
@@ -137,33 +143,40 @@ def _rebuild_phase2_objective(T: List[List[float]], basis: List[int], c: List[fl
     n_original = len(c_vec)
 
     # fila 0 = -c
-    T[0] = [0.0]*width
+    T[0] = [0.0] * width
     for j in range(n_original):
         T[0][j] = -c_vec[j]
+    if ops is not None:
+        ops.append("Z = -c")
 
-    # hacer canónica respecto a la base
+    # hacer canonica respecto a la base
     for i, bcol in enumerate(basis, start=1):
         if 0 <= bcol < n_original:
             cost = -T[0][bcol]  # c_k
             if abs(cost) > EPS:
-                T[0] = [T[0][j] + cost*T[i][j] for j in range(width)]
+                T[0] = [T[0][j] + cost * T[i][j] for j in range(width)]
+                if ops is not None:
+                    ops.append(f"Z = Z + ({cost}) * F{i}")
 
-def _pivot_out_artificial_zeros(T: List[List[float]], basis: List[int], n_original: int) -> None:
-    # Si quedó una columna removida como básica (-1 en basis) con RHS 0, intentamos pivotear
-    # buscando una columna no básica con coef !=0 en esa fila para formar base.
-    # Esto es raro en ejercicios típicos, pero lo soportamos.
+def _pivot_out_artificial_zeros(
+    T: List[List[float]],
+    basis: List[int],
+    n_original: int,
+    ops: List[str] | None = None,
+) -> None:
+    # Si quedo una columna removida como basica (-1 en basis) con RHS 0, intentamos pivotear
+    # buscando una columna no basica con coef != 0 en esa fila para formar base.
     for i, bcol in enumerate(basis, start=1):
         if bcol != -1:
             continue
         if abs(T[i][-1]) > 1e-7:
-            # si RHS no es 0, no deberíamos estar aquí
             continue
-        # buscar columna candidata
         for j in range(len(T[0]) - 1):
-            # evitar columnas de variables originales? no; podemos usar cualquiera salvo RHS
             if abs(T[i][j]) > 1e-9:
                 pivot(T, i, j)
-                basis[i-1] = j
+                basis[i - 1] = j
+                if ops is not None:
+                    ops.append(f"Limpieza: pivot en F{i} C{j + 1}")
                 break
 
 def solve_two_phase(model: LPModel, log: bool=False) -> LPSolution:
@@ -172,21 +185,26 @@ def solve_two_phase(model: LPModel, log: bool=False) -> LPSolution:
     T1, b1 = build.T, build.basis
 
     try:
-        T1, b1, it1 = simplex_max(T1, b1, log=log)
+        history1 = []
+        T1, b1, it1 = simplex_max(T1, b1, log=log, history=history1)
     except UnboundedError as e:
-        return LPSolution(status="UNBOUNDED", x=[0.0]*build.n_original, objective_value=float("inf"),
+        return LPSolution(status="UNBOUNDED", x=[0.0] * build.n_original, objective_value=float("inf"),
                           iterations=0, message=str(e), method_used="two_phase")
 
     phase1_obj = T1[0][-1]
     if abs(phase1_obj) > 1e-7:
-        return LPSolution(status="INFEASIBLE", x=[0.0]*build.n_original, objective_value=float("nan"),
-                          iterations=it1, message="INFEASIBLE: Fase I no llegó a 0.", method_used="two_phase")
+        extra = {"tableau_history": [{"label": "Fase I", "var_names": build.var_names, "items": history1}]}
+        return LPSolution(status="INFEASIBLE", x=[0.0] * build.n_original, objective_value=float("nan"),
+                          iterations=it1, message="INFEASIBLE: Fase I no llego a 0.", method_used="two_phase",
+                          extra=extra)
 
-    # Chequeo artificial básica > 0
+    # Chequeo artificial basica > 0
     for i, bcol in enumerate(b1, start=1):
         if bcol in build.artificial_cols and T1[i][-1] > 1e-7:
-            return LPSolution(status="INFEASIBLE", x=[0.0]*build.n_original, objective_value=float("nan"),
-                              iterations=it1, message="INFEASIBLE: artificial básica positiva.", method_used="two_phase")
+            extra = {"tableau_history": [{"label": "Fase I", "var_names": build.var_names, "items": history1}]}
+            return LPSolution(status="INFEASIBLE", x=[0.0] * build.n_original, objective_value=float("nan"),
+                              iterations=it1, message="INFEASIBLE: artificial basica positiva.", method_used="two_phase",
+                              extra=extra)
 
     # Fase II: eliminar columnas artificiales
     remove_cols = sorted(build.artificial_cols)
@@ -194,15 +212,29 @@ def solve_two_phase(model: LPModel, log: bool=False) -> LPSolution:
     b2 = _map_basis_after_removal(b1, remove_cols)
     var_names2 = [v for i, v in enumerate(build.var_names) if i not in set(remove_cols)]
 
-    # limpiar posibles -1
-    _pivot_out_artificial_zeros(T2, b2, build.n_original)
-
-    _rebuild_phase2_objective(T2, b2, model.c, model.sense)
+    # limpiar posibles -1 y preparar fila objetivo
+    prep_ops: List[str] = []
+    _pivot_out_artificial_zeros(T2, b2, build.n_original, ops=prep_ops)
+    _rebuild_phase2_objective(T2, b2, model.c, model.sense, ops=prep_ops)
 
     try:
-        Tfinal, bfinal, it2 = simplex_max(T2, b2, log=log)
+        history2 = []
+        if prep_ops:
+            history2.append(
+                {
+                    "iteration": 0,
+                    "tableau": [row[:] for row in T2],
+                    "basis": b2[:],
+                    "enter": -1,
+                    "leave": -1,
+                    "leave_var": -1,
+                    "pivot": None,
+                    "row_ops": prep_ops,
+                }
+            )
+        Tfinal, bfinal, it2 = simplex_max(T2, b2, log=log, history=history2, record_initial=not prep_ops)
     except UnboundedError as e:
-        return LPSolution(status="UNBOUNDED", x=[0.0]*build.n_original, objective_value=float("inf"),
+        return LPSolution(status="UNBOUNDED", x=[0.0] * build.n_original, objective_value=float("inf"),
                           iterations=it1, message=str(e), method_used="two_phase")
 
     x = extract_basic_solution(Tfinal, bfinal, build.n_original)
@@ -211,5 +243,9 @@ def solve_two_phase(model: LPModel, log: bool=False) -> LPSolution:
         z = -z
 
     extra = _final_info(Tfinal, bfinal, var_names2)
-    return LPSolution(status="OPTIMAL", x=x, objective_value=z, iterations=it1+it2,
+    extra["tableau_history"] = [
+        {"label": "Fase I", "var_names": build.var_names, "items": history1},
+        {"label": "Fase II", "var_names": var_names2, "items": history2},
+    ]
+    return LPSolution(status="OPTIMAL", x=x, objective_value=z, iterations=it1 + it2,
                       message="OK", method_used="two_phase", extra=extra)

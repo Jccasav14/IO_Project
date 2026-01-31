@@ -45,8 +45,8 @@ def build_tableau_big_m(model: LPModel, M: float = M_DEFAULT) -> BigMBuild:
     surplus_start = n + slack
     artificial_start = n + slack + surplus
 
-    T = [[0.0]*width for _ in range(m+1)]
-    basis = [-1]*m
+    T = [[0.0] * width for _ in range(m + 1)]
+    basis = [-1] * m
     artificial_cols: List[int] = []
 
     c_vec = model.c[:]
@@ -65,7 +65,7 @@ def build_tableau_big_m(model: LPModel, M: float = M_DEFAULT) -> BigMBuild:
         if cst.op == "<=":
             col_s = slack_start + s_i
             T[i][col_s] = 1.0
-            basis[i-1] = col_s
+            basis[i - 1] = col_s
             s_i += 1
         elif cst.op == ">=":
             col_e = surplus_start + e_i
@@ -73,13 +73,13 @@ def build_tableau_big_m(model: LPModel, M: float = M_DEFAULT) -> BigMBuild:
             e_i += 1
             col_a = artificial_start + a_i
             T[i][col_a] = 1.0
-            basis[i-1] = col_a
+            basis[i - 1] = col_a
             artificial_cols.append(col_a)
             a_i += 1
         elif cst.op == "=":
             col_a = artificial_start + a_i
             T[i][col_a] = 1.0
-            basis[i-1] = col_a
+            basis[i - 1] = col_a
             artificial_cols.append(col_a)
             a_i += 1
 
@@ -90,15 +90,15 @@ def build_tableau_big_m(model: LPModel, M: float = M_DEFAULT) -> BigMBuild:
         + [f"a{k+1}" for k in range(artificial)]
     )
 
-    # penalización: artificial tiene costo -M (max) => fila 0 usa -c, por eso +M
+    # Penalizacion: artificial tiene costo -M (max) => fila 0 usa -c, por eso +M
     for col_a in artificial_cols:
         T[0][col_a] = M
 
-    # canonicidad para básicas artificiales
+    # Canonicidad para basicas artificiales
     for row_idx, bcol in enumerate(basis, start=1):
         if bcol in artificial_cols:
             factor = M
-            T[0] = [T[0][j] - factor*T[row_idx][j] for j in range(width)]
+            T[0] = [T[0][j] - factor * T[row_idx][j] for j in range(width)]
 
     return BigMBuild(T=T, basis=basis, n_original=n, artificial_cols=artificial_cols, var_names=var_names)
 
@@ -119,16 +119,24 @@ def solve_big_m(model: LPModel, M: float = M_DEFAULT, log: bool=False) -> LPSolu
     build = build_tableau_big_m(model, M=M)
 
     try:
-        Tfinal, bfinal, it = simplex_max(build.T, build.basis, log=log)
+        history = []
+        Tfinal, bfinal, it = simplex_max(build.T, build.basis, log=log, history=history)
     except UnboundedError as e:
-        return LPSolution(status="UNBOUNDED", x=[0.0]*build.n_original, objective_value=float("inf"),
+        return LPSolution(status="UNBOUNDED", x=[0.0] * build.n_original, objective_value=float("inf"),
                           iterations=0, message=str(e), method_used="big_m")
 
-    # factibilidad: artificial básica > 0 => infactible
+    # factibilidad: artificial basica > 0 => infactible
     for i, bcol in enumerate(bfinal, start=1):
         if bcol in build.artificial_cols and Tfinal[i][-1] > 1e-7:
-            return LPSolution(status="INFEASIBLE", x=[0.0]*build.n_original, objective_value=float("nan"),
-                              iterations=it, message="INFEASIBLE: artificial básica positiva.", method_used="big_m")
+            extra = _final_info(Tfinal, bfinal, build.var_names)
+            extra["tableau_history"] = {
+                "label": "Big M",
+                "var_names": build.var_names,
+                "items": history,
+            }
+            return LPSolution(status="INFEASIBLE", x=[0.0] * build.n_original, objective_value=float("nan"),
+                              iterations=it, message="INFEASIBLE: artificial basica positiva.", method_used="big_m",
+                              extra=extra)
 
     x = extract_basic_solution(Tfinal, bfinal, build.n_original)
     z = Tfinal[0][-1]
@@ -136,5 +144,10 @@ def solve_big_m(model: LPModel, M: float = M_DEFAULT, log: bool=False) -> LPSolu
         z = -z
 
     extra = _final_info(Tfinal, bfinal, build.var_names)
+    extra["tableau_history"] = {
+        "label": "Big M",
+        "var_names": build.var_names,
+        "items": history,
+    }
     return LPSolution(status="OPTIMAL", x=x, objective_value=z, iterations=it, message="OK",
                       method_used="big_m", extra=extra)
