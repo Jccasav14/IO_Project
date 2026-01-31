@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Dict, Any, Union
 
-BIG_M = 1_000_000_000.0
+BIG_M = 1_000_000.0
 
 
 @dataclass
@@ -54,6 +54,45 @@ def total_cost(allocation: List[List[float]], costs: List[List[float]]) -> Tuple
                 z += qty * cc
     return z, has_M
 
+def total_cost_pretty(allocation: List[List[float]], costs: List[List[float]]) -> Tuple[str, float, float, bool]:
+    """
+    Returns:
+      pretty: "aM + b" or "b"
+      m_coeff: a (cantidad asignada en celdas M)
+      constant: b (costo sin M)
+      has_M
+    """
+    constant = 0.0
+    m_coeff = 0.0
+    has_M = False
+
+    for i in range(len(allocation)):
+        for j in range(len(allocation[0]) if allocation else 0):
+            qty = allocation[i][j]
+            if qty > 0:
+                cc = costs[i][j]
+                if cc >= BIG_M - 1_000:
+                    has_M = True
+                    m_coeff += qty
+                else:
+                    constant += qty * cc
+
+    if has_M:
+        if abs(constant) < 1e-9:
+            pretty = f"{_fmt(m_coeff)}M"
+        else:
+            pretty = f"{_fmt(m_coeff)}M + {_fmt(constant)}"
+    else:
+        pretty = _fmt(constant)
+
+    return pretty, m_coeff, constant, has_M
+
+
+def _fmt(x: float) -> str:
+    # Evita .0 innecesario
+    if abs(x - round(x)) < 1e-9:
+        return str(int(round(x)))
+    return f"{x:.6g}"
 
 def northwest_corner(supply: List[float], demand: List[float]) -> List[List[float]]:
     rows = len(supply)

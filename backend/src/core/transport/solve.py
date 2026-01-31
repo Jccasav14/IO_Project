@@ -11,17 +11,23 @@ from .algorithms import (
     vogel_approximation,
     optimize_stepping_stone,
     total_cost,
+    total_cost_pretty,
 )
 
 Method = Literal["auto", "northwest", "min_cost", "vogel", "optimize", "compare"]
 
 
-def _pack(name: str, alloc, costs) -> Dict[str, Any]:
+def _pack(name, alloc, costs):
     z, has_M = total_cost(alloc, costs)
+    pretty, m_coeff, constant, _ = total_cost_pretty(alloc, costs)
+
     return {
         "method": name,
         "total_cost": z,
         "has_M": has_M,
+        "cost_pretty": pretty,
+        "m_coeff": m_coeff,
+        "constant_cost": constant,
         "allocation": alloc,
     }
 

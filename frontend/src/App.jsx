@@ -1487,22 +1487,22 @@ function App() {
                             <tbody>
                               <tr>
                                 <td>Esquina Noroeste</td>
-                                <td>{tResult.initials?.northwest?.total_cost ?? "—"}</td>
+                                <td>{tResult.initials?.northwest?.cost_pretty ?? tResult.initials?.northwest?.total_cost ?? "—"}</td>
                                 <td>{tResult.initials?.northwest?.has_M ? "Contiene M" : ""}</td>
                               </tr>
                               <tr>
                                 <td>Costo Mínimo</td>
-                                <td>{tResult.initials?.min_cost?.total_cost ?? "—"}</td>
+                                <td>{tResult.initials?.min_cost?.cost_pretty ?? tResult.initials?.min_cost?.total_cost ?? "—"}</td>
                                 <td>{tResult.initials?.min_cost?.has_M ? "Contiene M" : ""}</td>
                               </tr>
                               <tr>
                                 <td>Vogel (VAM)</td>
-                                <td>{tResult.initials?.vogel?.total_cost ?? "—"}</td>
+                                <td>{tResult.initials?.vogel?.cost_pretty ?? tResult.initials?.vogel?.total_cost ?? "—"}</td>
                                 <td>{tResult.initials?.vogel?.has_M ? "Contiene M" : ""}</td>
                               </tr>
                               <tr>
                                 <td><b>Óptimo</b></td>
-                                <td><b>{tResult.optimal?.total_cost ?? "—"}</b></td>
+                                <td><b>{tResult.optimal?.cost_pretty ?? tResult.optimal?.total_cost ?? "—"}</b></td>
                                 <td>
                                   {tResult.optimal?.has_M ? "Contiene M" : ""}
                                   {tResult.optimal?.started_from ? ` · Inicio: ${tResult.optimal.started_from}` : ""}
@@ -1538,7 +1538,7 @@ function App() {
                         <ResultCard
                           title="Óptimo (Stepping-Stone)"
                           costLabel="Costo óptimo"
-                          cost={tResult.optimal?.total_cost}
+                          cost={tResult.optimal?.cost_pretty ?? tResult.optimal?.total_cost}
                           highlight
                         >
                           <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 10 }}>
