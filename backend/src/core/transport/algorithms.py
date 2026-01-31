@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any, Union
 
 BIG_M = 1_000_000_000.0
 
@@ -236,12 +236,24 @@ def optimize_stepping_stone(
     allocation: List[List[float]],
     costs: List[List[float]],
     max_iterations: int = 10_000,
-) -> Tuple[List[List[float]], int]:
+    trace: bool = False,
+    trace_limit: int = 200,
+) -> Union[Tuple[List[List[float]], int], Tuple[List[List[float]], int, List[Dict[str, Any]]]]:
     rows = len(allocation)
     cols = len(allocation[0]) if rows else 0
 
     alloc = [row[:] for row in allocation]
     it = 0
+
+    trace_steps: List[Dict[str, Any]] = []
+
+    # helper: costo total actual (sin M aquí; si usas M en total_cost(), úsala en solve.py)
+    def _total_cost(a: List[List[float]]) -> float:
+        z = 0.0
+        for r in range(rows):
+            for c in range(cols):
+                z += a[r][c] * costs[r][c]
+        return z
 
     while it < max_iterations:
         it += 1
@@ -264,20 +276,31 @@ def optimize_stepping_stone(
                         else:
                             marginal -= costs[r][c]
 
+                    # buscamos mejora => marginal negativo (más negativo, mejor)
                     if marginal < best_marginal - 1e-9:
                         best_marginal = marginal
                         enter_cell = (i, j)
                         best_cycle = cycle
 
+        # Si no hay mejora, terminamos: ya es óptimo
         if enter_cell is None or best_cycle is None:
-            break  # no improving cycle found
-
-        # Theta = min allocation in '-' positions
-        minus_vals = [alloc[r][c] for k, (r, c) in enumerate(best_cycle) if k % 2 == 1]
-        if not minus_vals:
             break
-        theta = min(minus_vals)
 
+        # Theta = min asignación en posiciones '-' (k impar)
+        minus_positions = [(r, c) for k, (r, c) in enumerate(best_cycle) if k % 2 == 1]
+        if not minus_positions:
+            break
+
+        theta = min(alloc[r][c] for (r, c) in minus_positions)
+
+        # celda que sale: una de las '-' que alcanza el mínimo (queda en 0)
+        leaving_cell: Optional[Tuple[int, int]] = None
+        for (r, c) in minus_positions:
+            if abs(alloc[r][c] - theta) <= 1e-9:
+                leaving_cell = (r, c)
+                break
+
+        # aplicar ajuste
         for k, (r, c) in enumerate(best_cycle):
             if k % 2 == 0:
                 alloc[r][c] += theta
@@ -286,4 +309,19 @@ def optimize_stepping_stone(
                 if alloc[r][c] < 1e-9:
                     alloc[r][c] = 0.0
 
+        # guardar trace (si está activado)
+        if trace and len(trace_steps) < trace_limit:
+            trace_steps.append({
+                "iter": it,
+                "enter": [enter_cell[0], enter_cell[1]],
+                "delta": float(best_marginal),        # marginal (Δ) - si es negativo, mejora
+                "theta": float(theta),
+                "cycle": [[r, c] for (r, c) in best_cycle],
+                "leaving": [leaving_cell[0], leaving_cell[1]] if leaving_cell else None,
+                "total_cost": float(_total_cost(alloc)),
+                "allocation": [row[:] for row in alloc],
+            })
+
+    if trace:
+        return alloc, it, trace_steps
     return alloc, it

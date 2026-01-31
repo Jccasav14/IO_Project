@@ -178,6 +178,25 @@ function App() {
   const [tResult, setTResult] = useState(null);
   const [tLoading, setTLoading] = useState(false);
   const [tError, setTError] = useState("");
+  const resetTransport = () => {
+    const defaultRows = 2;
+    const defaultCols = 2;
+
+    setTRows(defaultRows);
+    setTCols(defaultCols);
+
+    setTCosts(makeMatrix(defaultRows, defaultCols, 0));
+
+    setTSupply(Array(defaultRows).fill(0));
+    setTDemand(Array(defaultCols).fill(0));
+
+    setTResult(null);
+    setTError("");
+    setTLoading(false);
+
+    setTOptimize(true);
+  };
+
   const ResultCard = ({ title, costLabel = "Costo", cost, highlight = false, children }) => (
     <div
       style={{
@@ -1339,7 +1358,7 @@ function App() {
                     const payload = {
                       method: "compare",
                       model: { supply: tSupply, demand: tDemand, costs: tCosts },
-                      options: { optimize: tOptimize, compare_all: true },
+                      options: { optimize: tOptimize, compare_all: true, trace: true, trace_limit: 50 },
                     };
                     const res = await fetch("http://127.0.0.1:8002/solve/transport", {
                       method: "POST",
@@ -1347,18 +1366,27 @@ function App() {
                       body: JSON.stringify(payload),
                     });
                     const data = await res.json();
-                    if (!res.ok) throw new Error(data?.message || data?.error || "Error");
-                    setTResult(data);
-                  } catch (err) {
-                    setTError(String(err?.message || err));
-                  } finally {
-                    setTLoading(false);
-                  }
-                }}
-                disabled={tLoading}
-              >
-                {tLoading ? "Resolviendo..." : "Resolver"}
-              </button>
+                      if (!res.ok) throw new Error(data?.message || data?.error || "Error");
+                      setTResult(data);
+                    } catch (err) {
+                      setTError(String(err?.message || err));
+                    } finally {
+                      setTLoading(false);
+                    }
+                  }}
+                  disabled={tLoading}
+                >
+                  {tLoading ? "Resolviendo..." : "Resolver"}
+                </button>
+
+                <button
+                  className="ghost"
+                  onClick={resetTransport}
+                  disabled={tLoading}
+                  style={{ marginLeft: 8 }}
+                >
+                  Limpiar
+                </button>
 
               {tError && <div className="error">{tError}</div>}
             </div>
@@ -1525,7 +1553,43 @@ function App() {
                           <TransportTable allocation={tResult.optimal?.allocation} />
                         </ResultCard>
 
-                        {/* Mensajes de balanceo */}
+                        {Array.isArray(tResult.optimal?.trace) && tResult.optimal.trace.length > 0 && (
+                          <div style={{ marginTop: 14 }}>
+                            <h4>Detalle de iteraciones</h4>
+
+                            <details>
+                              <summary style={{ cursor: "pointer" }}>
+                                Ver {tResult.optimal.trace.length} iteraciones
+                              </summary>
+
+                              {tResult.optimal.trace.map((step) => (
+                                <div key={step.iter} style={{ marginTop: 12, padding: 12, border: "1px solid #ddd", borderRadius: 10 }}>
+                                  <p style={{ margin: 0 }}>
+                                    <b>Iteración {step.iter}</b> — <b>Costo:</b> {step.total_cost}
+                                  </p>
+                                  <p style={{ margin: "6px 0" }}>
+                                    <b>Entra:</b> O{step.enter[0] + 1}, D{step.enter[1] + 1}{" "}
+                                    | <b>Δ:</b> {step.delta} | <b>θ:</b> {step.theta}
+                                    {step.leaving ? (
+                                      <>
+                                        {" "} | <b>Sale:</b> O{step.leaving[0] + 1}, D{step.leaving[1] + 1}
+                                      </>
+                                    ) : null}
+                                  </p>
+
+                                  <p style={{ margin: "6px 0" }}>
+                                    <b>Ciclo:</b> {step.cycle.map(([r, c]) => ` (O${r + 1},D${c + 1})`).join(" → ")}
+                                  </p>
+
+                                  <TransportTable allocation={step.allocation} />
+                                </div>
+                              ))}
+                            </details>
+                          </div>
+                        )}
+
+
+                        { }
                         {(tResult.extra?.balanced?.added_dummy_origin || tResult.extra?.balanced?.added_dummy_destination) && (
                           <div style={{ marginTop: 8 }}>
                             {tResult.extra?.balanced?.added_dummy_origin && (
