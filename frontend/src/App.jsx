@@ -1354,10 +1354,29 @@ function App() {
                   setTError("");
                   setTResult(null);
                   setTLoading(true);
+                  const normalizeCostCell = (v) => {
+                    if (v == null || v === "") return 0;
+
+                    const s = String(v).trim();
+                    if (s.toUpperCase() === "M") return "M";
+
+                    const num = Number(s.replace(",", "."));
+                    return Number.isFinite(num) ? num : 0;
+                  };
+
+                  const normalizeNumber = (v) => {
+                    if (v == null || v === "") return 0;
+                    const num = Number(String(v).replace(",", "."));
+                    return Number.isFinite(num) ? num : 0;
+                  };
                   try {
                     const payload = {
                       method: "compare",
-                      model: { supply: tSupply, demand: tDemand, costs: tCosts },
+                      model: {
+                        supply: tSupply.map(normalizeNumber),
+                        demand: tDemand.map(normalizeNumber),
+                        costs: tCosts.map((row) => row.map(normalizeCostCell)),
+                      },
                       options: { optimize: tOptimize, compare_all: true, trace: true, trace_limit: 50 },
                     };
                     const res = await fetch("http://127.0.0.1:8002/solve/transport", {
@@ -1412,27 +1431,33 @@ function App() {
                         {Array.from({ length: tCols }, (_, j) => (
                           <td key={`c-${i}-${j}`}>
                             <input
-                              value={tCosts[i]?.[j] ?? 0}
+                              type="text"
+                              inputMode="decimal"
+                              value={tCosts[i]?.[j] ?? ""}
                               onChange={(e) => {
-                                const v = e.target.value;
+                                const raw = e.target.value;
+                                if (!/^(?:[Mm]|[0-9]*[.,]?[0-9]*)$/.test(raw)) return;
                                 setTCosts((prev) => {
                                   const next = prev.map((row) => row.slice());
-                                  next[i][j] = v === "" ? 0 : v;
+                                  next[i][j] = raw;
                                   return next;
                                 });
                               }}
-                              placeholder="0 / M"
+                              placeholder="0 / 12.5 / 12,5 / M"
                             />
                           </td>
                         ))}
                         <td>
                           <input
-                            value={tSupply[i] ?? 0}
+                            type="text"
+                            inputMode="decimal" 
+                            value={tSupply[i] ?? ""}
                             onChange={(e) => {
-                              const v = e.target.value;
+                              const raw = e.target.value;
+                              if (!/^[0-9]*[.,]?[0-9]*$/.test(raw)) return;
                               setTSupply((prev) => {
                                 const next = prev.slice();
-                                next[i] = v === "" ? 0 : Number(v);
+                                next[i] = raw;
                                 return next;
                               });
                             }}
@@ -1445,12 +1470,15 @@ function App() {
                       {Array.from({ length: tCols }, (_, j) => (
                         <td key={`dem-${j}`}>
                           <input
-                            value={tDemand[j] ?? 0}
+                            type="text"
+                            inputMode="decimal" 
+                            value={tDemand[j] ?? ""}
                             onChange={(e) => {
-                              const v = e.target.value;
+                              const raw = e.target.value;
+                              if (!/^[0-9]*[.,]?[0-9]*$/.test(raw)) return;
                               setTDemand((prev) => {
                                 const next = prev.slice();
-                                next[j] = v === "" ? 0 : Number(v);
+                                next[j] = raw;
                                 return next;
                               });
                             }}
