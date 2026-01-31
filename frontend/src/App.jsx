@@ -16,6 +16,118 @@ function makeMatrix(rows, cols, fill = 0) {
   );
 }
 
+
+function circleLayout(nodes, width, height) {
+  const cx = width / 2;
+  const cy = height / 2;
+  const r = Math.min(width, height) * 0.35;
+  const n = nodes.length || 1;
+  const pos = {};
+  nodes.forEach((id, i) => {
+    const ang = (2 * Math.PI * i) / n - Math.PI / 2;
+    pos[id] = {
+      x: cx + r * Math.cos(ang),
+      y: cy + r * Math.sin(ang),
+    };
+  });
+  return pos;
+}
+
+function NetworkGraph({ model, highlightEdges = [], flowMap = null }) {
+  if (!model || !Array.isArray(model.nodes) || model.nodes.length === 0) {
+    return <p className="empty">No hay red para visualizar.</p>;
+  }
+
+  const width = 720;
+  const height = 420;
+  const pos = circleLayout(model.nodes, width, height);
+  const hl = new Set(highlightEdges || []);
+  const directed = !!model.directed;
+
+  function edgeKey(u, v) {
+    return `${u}->${v}`;
+  }
+
+  function isHighlighted(e) {
+    const k1 = edgeKey(e.u, e.v);
+    const k2 = edgeKey(e.v, e.u);
+    return hl.has(k1) || (!directed && hl.has(k2));
+  }
+
+  const edges = Array.isArray(model.edges) ? model.edges : [];
+
+  return (
+    <div className="net-viz">
+      <svg viewBox={`0 0 ${width} ${height}`} className="net-svg" role="img" aria-label="Red">
+        <defs>
+          <marker
+            id="arrow"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
+          </marker>
+        </defs>
+
+        {edges.map((e, i) => {
+          const p1 = pos[e.u];
+          const p2 = pos[e.v];
+          if (!p1 || !p2) return null;
+
+          const hi = isHighlighted(e);
+          const hasFlow = flowMap && flowMap[edgeKey(e.u, e.v)] > 0;
+          const cls = hi ? "edge edge-hi" : hasFlow ? "edge edge-flow" : "edge";
+
+          const mx = (p1.x + p2.x) / 2;
+          const my = (p1.y + p2.y) / 2;
+
+          const labelParts = [];
+          if (typeof e.w === "number") labelParts.push(`w=${e.w}`);
+          if (typeof e.capacity === "number") labelParts.push(`cap=${e.capacity}`);
+          if (typeof e.cost === "number") labelParts.push(`c=${e.cost}`);
+          if (flowMap && flowMap[edgeKey(e.u, e.v)] > 0) labelParts.push(`f=${flowMap[edgeKey(e.u, e.v)]}`);
+
+          const label = labelParts.join(" · ");
+
+          return (
+            <g key={`edge-${i}`}>
+              <line
+                x1={p1.x}
+                y1={p1.y}
+                x2={p2.x}
+                y2={p2.y}
+                className={cls}
+                markerEnd={directed ? "url(#arrow)" : undefined}
+              />
+              {label ? (
+                <text x={mx} y={my} className="edge-label">
+                  {label}
+                </text>
+              ) : null}
+            </g>
+          );
+        })}
+
+        {model.nodes.map((id) => {
+          const p = pos[id];
+          return (
+            <g key={`node-${id}`}>
+              <circle cx={p.x} cy={p.y} r="18" className="node" />
+              <text x={p.x} y={p.y + 5} textAnchor="middle" className="node-label">
+                {id}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 function App() {
   const [page, setPage] = useState("home");
   const [name, setName] = useState("LP_demo");
@@ -37,6 +149,258 @@ function App() {
   const [aiReport, setAiReport] = useState("");
   const [fileData, setFileData] = useState("");
   const [fileName, setFileName] = useState("");
+
+  // Redes
+  const [netMethod, setNetMethod] = useState("shortest_path");
+  const [netNodesText, setNetNodesText] = useState("A,B,C,D,E");
+  const [netDirected, setNetDirected] = useState(false);
+  const [netSource, setNetSource] = useState("A");
+  const [netTarget, setNetTarget] = useState("D");
+  const [netSink, setNetSink] = useState("E");
+  const [netDemand, setNetDemand] = useState(10);
+  const [netEdges, setNetEdges] = useState([
+    { u: "A", v: "B", w: 2, capacity: 0, cost: 0 },
+    { u: "A", v: "C", w: 5, capacity: 0, cost: 0 },
+    { u: "B", v: "C", w: 1, capacity: 0, cost: 0 },
+    { u: "B", v: "D", w: 4, capacity: 0, cost: 0 },
+    { u: "C", v: "D", w: 1, capacity: 0, cost: 0 },
+    { u: "D", v: "E", w: 4, capacity: 0, cost: 0 },
+  ]);
+
+
+  // Transporte
+  const [tRows, setTRows] = useState(3);
+  const [tCols, setTCols] = useState(3);
+  const [tCosts, setTCosts] = useState(makeMatrix(3, 3, 0));
+  const [tSupply, setTSupply] = useState(Array.from({ length: 3 }, () => 0));
+  const [tDemand, setTDemand] = useState(Array.from({ length: 3 }, () => 0));
+  const [tOptimize, setTOptimize] = useState(true);
+  const [tResult, setTResult] = useState(null);
+  const [tLoading, setTLoading] = useState(false);
+  const [tError, setTError] = useState("");
+  const ResultCard = ({ title, costLabel = "Costo", cost, highlight = false, children }) => (
+    <div
+      style={{
+        marginTop: 16,
+        marginBottom: 18,
+        padding: "16px 18px",
+        borderRadius: 14,
+        background: highlight ? "#e6f4ea" : "#fafafa",
+        border: highlight ? "2px solid #2f855a" : "1px solid #e3e3e3",
+        boxShadow: highlight ? "0 6px 16px rgba(0,0,0,0.10)" : "0 4px 10px rgba(0,0,0,0.06)",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+        <h4 style={{ margin: 0, fontSize: "1.05rem" }}>
+          {highlight ? "⭐ " : ""}{title}
+        </h4>
+
+        <div style={{ fontSize: "0.95rem" }}>
+          <b>{costLabel}:</b>{" "}
+          <span style={{ fontSize: "1.05rem" }}>{cost ?? "—"}</span>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 12 }}>{children}</div>
+    </div>
+  );
+
+  const TransportTable = ({ allocation, emptySymbol = "–" }) => {
+    if (!Array.isArray(allocation) || allocation.length === 0) {
+      return <p className="empty">Sin tabla.</p>;
+    }
+
+    const cols = allocation[0]?.length || 0;
+
+    return (
+      <div className="table-wrap">
+        <table className="matrix">
+          <thead>
+            <tr>
+              <th></th>
+              {Array.from({ length: cols }, (_, j) => (
+                <th key={`d-${j}`}>D{j + 1}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {allocation.map((row, i) => (
+              <tr key={`r-${i}`}>
+                <th>O{i + 1}</th>
+                {row.map((val, j) => (
+                  <td key={`v-${i}-${j}`}>{Number(val) > 0 ? val : emptySymbol}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+
+  const [netResult, setNetResult] = useState(null);
+  const [netError, setNetError] = useState("");
+  const [netLoading, setNetLoading] = useState(false);
+
+  function parseNodes(text) {
+    return String(text)
+      .split(/[,\n]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  function buildNetModel() {
+    const nodes = parseNodes(netNodesText);
+    const edges = (netEdges || [])
+      .filter((e) => e && String(e.u).trim() && String(e.v).trim())
+      .map((e) => {
+        const out = { u: String(e.u).trim(), v: String(e.v).trim() };
+        if (typeof e.w === "number" && !Number.isNaN(e.w)) out.w = e.w;
+        if (typeof e.capacity === "number" && !Number.isNaN(e.capacity) && e.capacity > 0)
+          out.capacity = e.capacity;
+        if (typeof e.cost === "number" && !Number.isNaN(e.cost) && e.cost !== 0) out.cost = e.cost;
+        return out;
+      });
+
+    const model = {
+      nodes,
+      edges,
+      directed: !!netDirected,
+    };
+
+    if (netMethod === "shortest_path") {
+      model.source = String(netSource).trim();
+      model.target = String(netTarget).trim();
+    }
+    if (netMethod === "max_flow" || netMethod === "min_cost_flow") {
+      model.source = String(netSource).trim();
+      model.sink = String(netSink).trim();
+    }
+    if (netMethod === "min_cost_flow") {
+      model.demand = Number(netDemand);
+    }
+    return model;
+  }
+
+  const netModelPreview = useMemo(() => {
+    try {
+      return JSON.stringify(buildNetModel(), null, 2);
+    } catch {
+      return "";
+    }
+  }, [netMethod, netNodesText, netDirected, netEdges, netSource, netTarget, netSink, netDemand]);
+
+  function updateNetEdge(idx, field, value) {
+    setNetEdges((prev) => {
+      const next = (prev || []).map((e) => ({ ...e }));
+      if (!next[idx]) next[idx] = { u: "", v: "", w: 0, capacity: 0, cost: 0 };
+      next[idx][field] = value;
+      return next;
+    });
+  }
+
+  function addNetEdge() {
+    setNetEdges((prev) => [...(prev || []), { u: "", v: "", w: 1, capacity: 1, cost: 0 }]);
+  }
+
+  function removeNetEdge(idx) {
+    setNetEdges((prev) => (prev || []).filter((_, i) => i !== idx));
+  }
+
+  function loadNetExample(which) {
+    if (which === "shortest_path") {
+      setNetMethod("shortest_path");
+      setNetDirected(false);
+      setNetNodesText("A,B,C,D,E");
+      setNetSource("A");
+      setNetTarget("E");
+      setNetEdges([
+        { u: "A", v: "B", w: 2, capacity: 0, cost: 0 },
+        { u: "A", v: "C", w: 5, capacity: 0, cost: 0 },
+        { u: "B", v: "C", w: 1, capacity: 0, cost: 0 },
+        { u: "B", v: "D", w: 4, capacity: 0, cost: 0 },
+        { u: "C", v: "D", w: 1, capacity: 0, cost: 0 },
+        { u: "D", v: "E", w: 4, capacity: 0, cost: 0 },
+      ]);
+    }
+    if (which === "mst") {
+      setNetMethod("mst");
+      setNetDirected(false);
+      setNetNodesText("A,B,C,D,E");
+      setNetEdges([
+        { u: "A", v: "B", w: 2, capacity: 0, cost: 0 },
+        { u: "A", v: "C", w: 5, capacity: 0, cost: 0 },
+        { u: "B", v: "C", w: 1, capacity: 0, cost: 0 },
+        { u: "B", v: "D", w: 4, capacity: 0, cost: 0 },
+        { u: "C", v: "D", w: 1, capacity: 0, cost: 0 },
+        { u: "D", v: "E", w: 4, capacity: 0, cost: 0 },
+      ]);
+    }
+    if (which === "max_flow") {
+      setNetMethod("max_flow");
+      setNetDirected(true);
+      setNetNodesText("S,A,B,T");
+      setNetSource("S");
+      setNetSink("T");
+      setNetEdges([
+        { u: "S", v: "A", w: 0, capacity: 10, cost: 0 },
+        { u: "S", v: "B", w: 0, capacity: 5, cost: 0 },
+        { u: "A", v: "B", w: 0, capacity: 15, cost: 0 },
+        { u: "A", v: "T", w: 0, capacity: 10, cost: 0 },
+        { u: "B", v: "T", w: 0, capacity: 10, cost: 0 },
+      ]);
+    }
+    if (which === "min_cost_flow") {
+      setNetMethod("min_cost_flow");
+      setNetDirected(true);
+      setNetNodesText("S,A,B,T");
+      setNetSource("S");
+      setNetSink("T");
+      setNetDemand(10);
+      setNetEdges([
+        { u: "S", v: "A", w: 0, capacity: 8, cost: 2 },
+        { u: "S", v: "B", w: 0, capacity: 7, cost: 4 },
+        { u: "A", v: "B", w: 0, capacity: 3, cost: 1 },
+        { u: "A", v: "T", w: 0, capacity: 8, cost: 3 },
+        { u: "B", v: "T", w: 0, capacity: 7, cost: 2 },
+      ]);
+    }
+  }
+
+  const netModel = useMemo(() => buildNetModel(), [netMethod, netNodesText, netDirected, netEdges, netSource, netTarget, netSink, netDemand]);
+  const netHighlightEdges = Array.isArray(netResult?.highlight?.edges) ? netResult.highlight.edges : [];
+
+  function derivePathNodes({ edges, source, target, directed }) {
+    if (!Array.isArray(edges) || edges.length === 0 || !source || !target) return [];
+    // Build adjacency from highlighted edges and try to walk from source to target.
+    const adj = new Map();
+    const add = (u, v) => {
+      if (!adj.has(u)) adj.set(u, []);
+      adj.get(u).push(v);
+    };
+    edges.forEach((k) => {
+      const [u, v] = String(k).split("->");
+      if (!u || !v) return;
+      add(u, v);
+      if (!directed) add(v, u);
+    });
+    const path = [source];
+    const seen = new Set([source]);
+    let cur = source;
+    for (let i = 0; i < edges.length + 2; i++) {
+      if (cur === target) break;
+      const nxts = adj.get(cur) || [];
+      const nxt = nxts.find((x) => !seen.has(x)) || nxts[0];
+      if (!nxt) break;
+      path.push(nxt);
+      seen.add(nxt);
+      cur = nxt;
+    }
+    if (path[path.length - 1] !== target) return [];
+    return path;
+  }
+
 
   const numberFormat = useMemo(
     () => new Intl.NumberFormat("es-EC", { maximumFractionDigits: 6 }),
@@ -198,6 +562,91 @@ function App() {
       setLoading(false);
     }
   }
+
+  async function solveNetworks() {
+    setNetError("");
+    setNetResult(null);
+
+    const model = buildNetModel();
+    if (!Array.isArray(model.nodes) || model.nodes.length === 0) {
+      setNetError("Debes ingresar al menos 1 nodo.");
+      return;
+    }
+    if (!Array.isArray(model.edges) || model.edges.length === 0) {
+      setNetError("Debes ingresar al menos 1 arista (u, v). ");
+      return;
+    }
+
+    if (netMethod === "shortest_path") {
+      if (!model.source || !model.target) {
+        setNetError("Ruta más corta requiere source y target.");
+        return;
+      }
+      const bad = model.edges.some((e) => typeof e.w !== "number");
+      if (bad) {
+        setNetError("Ruta más corta requiere pesos w en todas las aristas.");
+        return;
+      }
+    }
+    if (netMethod === "mst") {
+      const bad = model.edges.some((e) => typeof e.w !== "number");
+      if (bad) {
+        setNetError("Árbol mínimo requiere pesos w en todas las aristas.");
+        return;
+      }
+    }
+    if (netMethod === "max_flow") {
+      if (!model.source || !model.sink) {
+        setNetError("Flujo máximo requiere source y sink.");
+        return;
+      }
+      const bad = model.edges.some((e) => typeof e.capacity !== "number" || e.capacity <= 0);
+      if (bad) {
+        setNetError("Flujo máximo requiere capacity > 0 en todas las aristas.");
+        return;
+      }
+    }
+    if (netMethod === "min_cost_flow") {
+      if (!model.source || !model.sink) {
+        setNetError("Flujo de costo mínimo requiere source y sink.");
+        return;
+      }
+      if (!(typeof model.demand === "number") || model.demand <= 0) {
+        setNetError("Flujo de costo mínimo requiere demand > 0.");
+        return;
+      }
+      const badCap = model.edges.some((e) => typeof e.capacity !== "number" || e.capacity <= 0);
+      if (badCap) {
+        setNetError("Flujo de costo mínimo requiere capacity > 0 en todas las aristas.");
+        return;
+      }
+      const badCost = model.edges.some((e) => typeof e.cost !== "number");
+      if (badCost) {
+        setNetError("Flujo de costo mínimo requiere cost (puede ser 0) en todas las aristas.");
+        return;
+      }
+    }
+
+    setNetLoading(true);
+    try {
+      const res = await fetch("http://127.0.0.1:8001/solve/networks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ method: netMethod, model }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNetError(data?.error || "Error al resolver redes.");
+      } else {
+        setNetResult(data);
+      }
+    } catch (e) {
+      setNetError("No se pudo conectar al servidor de Redes (http://127.0.0.1:8001). ¿Está encendido?");
+    } finally {
+      setNetLoading(false);
+    }
+  }
+
 
   async function analyzeWithAI() {
     setAiError("");
@@ -386,15 +835,19 @@ function App() {
                   Ir a Programación Lineal
                 </button>
               </div>
-              <div className="module-card disabled">
+              <div className="module-card">
                 <h3>Transporte</h3>
                 <p>Costo mínimo, Esquina noroeste, Vogel, Optimalidad</p>
-                <button disabled>Próximamente</button>
+                <button className="primary" onClick={() => setPage("transport")}>
+                  Ir a Transporte
+                </button>
               </div>
-              <div className="module-card disabled">
+              <div className="module-card">
                 <h3>Redes</h3>
                 <p>Ruta más corta, Árbol mínimo, Flujo máximo, Costo mínimo</p>
-                <button disabled>Próximamente</button>
+                <button className="primary" onClick={() => setPage("networks")}>
+                  Ir a Redes
+                </button>
               </div>
               <div className="module-card disabled">
                 <h3>Inventario / Prog. Dinámica</h3>
@@ -769,8 +1222,8 @@ function App() {
                           {i === 0
                             ? "Z"
                             : Array.isArray(result.basic_vars)
-                            ? result.basic_vars[i - 1] || `R${i}`
-                            : `R${i}`}
+                              ? result.basic_vars[i - 1] || `R${i}`
+                              : `R${i}`}
                         </td>
                         {row.slice(0, -1).map((v, j) => (
                           <td key={`c-${i}-${j}`}>{fmt(v)}</td>
@@ -785,6 +1238,587 @@ function App() {
           </section>
         </>
       )}
+
+
+
+      {page === "transport" && (
+        <>
+          <header className="hero">
+            <div>
+              <h1>Solucionador de Transporte</h1>
+              <p>
+                Calcula soluciones iniciales con Esquina Noroeste, Costo Mínimo y Vogel (VAM),
+                y (opcionalmente) optimiza hasta el óptimo con Stepping-Stone.
+              </p>
+              <button className="ghost" onClick={() => setPage("home")}>
+                ← Volver al inicio
+              </button>
+            </div>
+
+            <div className="meta">
+              <label style={{ color: "#fff"}}>
+                Optimización
+                <div style={{ marginTop: 6 }}>
+                  <label style={{ display: "flex", gap: 8, alignItems: "center", color:"#fff"}}>
+                    <input
+                      type="checkbox"
+                      checked={tOptimize}
+                      onChange={(e) => setTOptimize(e.target.checked)}
+                    />
+                    Optimizar (Simplex de Transporte)
+                  </label>
+                </div>
+              </label>
+
+            </div>
+          </header>
+
+          <div className="panel">
+
+          <div className="grid-2">
+            <div>
+              <h3>Dimensiones</h3>
+              <div className="row">
+                <label>Orígenes</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={tRows}
+                  onChange={(e) => {
+                    const r = Math.max(1, Number(e.target.value || 1));
+                    setTRows(r);
+                    setTCosts((prev) => {
+                      const next = makeMatrix(r, tCols, 0);
+                      for (let i = 0; i < Math.min(prev.length, r); i++) {
+                        for (let j = 0; j < Math.min(prev[0]?.length || 0, tCols); j++) {
+                          next[i][j] = prev[i][j];
+                        }
+                      }
+                      return next;
+                    });
+                    setTSupply((prev) => {
+                      const next = Array.from({ length: r }, (_, i) => prev[i] ?? 0);
+                      return next;
+                    });
+                  }}
+                />
+              </div>
+              <div className="row">
+                <label>Destinos</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={tCols}
+                  onChange={(e) => {
+                    const c = Math.max(1, Number(e.target.value || 1));
+                    setTCols(c);
+                    setTCosts((prev) => {
+                      const next = makeMatrix(tRows, c, 0);
+                      for (let i = 0; i < Math.min(prev.length, tRows); i++) {
+                        for (let j = 0; j < Math.min(prev[0]?.length || 0, c); j++) {
+                          next[i][j] = prev[i][j];
+                        }
+                      }
+                      return next;
+                    });
+                    setTDemand((prev) => {
+                      const next = Array.from({ length: c }, (_, j) => prev[j] ?? 0);
+                      return next;
+                    });
+                  }}
+                />
+              </div>
+
+              <button
+                className="primary"
+                onClick={async () => {
+                  setTError("");
+                  setTResult(null);
+                  setTLoading(true);
+                  try {
+                    const payload = {
+                      method: "compare",
+                      model: { supply: tSupply, demand: tDemand, costs: tCosts },
+                      options: { optimize: tOptimize, compare_all: true },
+                    };
+                    const res = await fetch("http://127.0.0.1:8002/solve/transport", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(payload),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data?.message || data?.error || "Error");
+                    setTResult(data);
+                  } catch (err) {
+                    setTError(String(err?.message || err));
+                  } finally {
+                    setTLoading(false);
+                  }
+                }}
+                disabled={tLoading}
+              >
+                {tLoading ? "Resolviendo..." : "Resolver"}
+              </button>
+
+              {tError && <div className="error">{tError}</div>}
+            </div>
+
+            <div>
+              <h3>Datos</h3>
+
+              <div className="table-wrap">
+                <table className="matrix">
+                  <thead>
+                    <tr>
+                      <th></th>
+                      {Array.from({ length: tCols }, (_, j) => (
+                        <th key={`d-${j}`}>D{j + 1}</th>
+                      ))}
+                      <th>Oferta</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: tRows }, (_, i) => (
+                      <tr key={`r-${i}`}>
+                        <th>O{i + 1}</th>
+                        {Array.from({ length: tCols }, (_, j) => (
+                          <td key={`c-${i}-${j}`}>
+                            <input
+                              value={tCosts[i]?.[j] ?? 0}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setTCosts((prev) => {
+                                  const next = prev.map((row) => row.slice());
+                                  next[i][j] = v === "" ? 0 : v;
+                                  return next;
+                                });
+                              }}
+                              placeholder="0 / M"
+                            />
+                          </td>
+                        ))}
+                        <td>
+                          <input
+                            value={tSupply[i] ?? 0}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setTSupply((prev) => {
+                                const next = prev.slice();
+                                next[i] = v === "" ? 0 : Number(v);
+                                return next;
+                              });
+                            }}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                    <tr>
+                      <th>Demanda</th>
+                      {Array.from({ length: tCols }, (_, j) => (
+                        <td key={`dem-${j}`}>
+                          <input
+                            value={tDemand[j] ?? 0}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setTDemand((prev) => {
+                                const next = prev.slice();
+                                next[j] = v === "" ? 0 : Number(v);
+                                return next;
+                              });
+                            }}
+                          />
+                        </td>
+                      ))}
+                      <td></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {tResult && (
+                <div className="result">
+                    <h3>Resultado</h3>
+
+                    {/* MODO COMPARACIÓN */}
+                    {tResult.compare ? (
+                      <>
+                        <p>
+                          <b>Estado:</b> {tResult.status}
+                        </p>
+
+                        {/* Tabla resumen */}
+                        <div className="table-wrap" style={{ marginTop: 10 }}>
+                          <table className="tableau">
+                            <thead>
+                              <tr>
+                                <th>Método</th>
+                                <th>Costo</th>
+                                <th>Notas</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr>
+                                <td>Esquina Noroeste</td>
+                                <td>{tResult.initials?.northwest?.total_cost ?? "—"}</td>
+                                <td>{tResult.initials?.northwest?.has_M ? "Contiene M" : ""}</td>
+                              </tr>
+                              <tr>
+                                <td>Costo Mínimo</td>
+                                <td>{tResult.initials?.min_cost?.total_cost ?? "—"}</td>
+                                <td>{tResult.initials?.min_cost?.has_M ? "Contiene M" : ""}</td>
+                              </tr>
+                              <tr>
+                                <td>Vogel (VAM)</td>
+                                <td>{tResult.initials?.vogel?.total_cost ?? "—"}</td>
+                                <td>{tResult.initials?.vogel?.has_M ? "Contiene M" : ""}</td>
+                              </tr>
+                              <tr>
+                                <td><b>Óptimo</b></td>
+                                <td><b>{tResult.optimal?.total_cost ?? "—"}</b></td>
+                                <td>
+                                  {tResult.optimal?.has_M ? "Contiene M" : ""}
+                                  {tResult.optimal?.started_from ? ` · Inicio: ${tResult.optimal.started_from}` : ""}
+                                  {Number.isFinite(tResult.optimal?.iterations) ? ` · It: ${tResult.optimal.iterations}` : ""}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* 3 tarjetas iniciales (AHORA el .map solo retorna ResultCard) */}
+                        {[
+                          ["northwest", "Esquina Noroeste"],
+                          ["min_cost", "Costo Mínimo"],
+                          ["vogel", "Vogel (VAM)"],
+                        ].map(([key, title]) => {
+                          const item = tResult.initials?.[key];
+                          return (
+                            <ResultCard
+                              key={key}
+                              title={title}
+                              cost={item?.total_cost}
+                            >
+                              <TransportTable allocation={item?.allocation} />
+                              {item?.has_M && (
+                                <p className="hint" style={{ marginTop: 8 }}>Contiene M (penalización).</p>
+                              )}
+                            </ResultCard>
+                          );
+                        })}
+
+                        {/* Óptimo como tarjeta destacada */}
+                        <ResultCard
+                          title="Óptimo (Stepping-Stone)"
+                          costLabel="Costo óptimo"
+                          cost={tResult.optimal?.total_cost}
+                          highlight
+                        >
+                          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 10 }}>
+                            <span>
+                              <b>Iteraciones:</b>{" "}
+                              {Number.isFinite(tResult.optimal?.iterations) ? tResult.optimal.iterations : "—"}
+                            </span>
+                            <span><b>Inició desde:</b> {tResult.optimal?.started_from ?? "—"}</span>
+                            {tResult.optimal?.has_M && <span><b>Nota:</b> Contiene M</span>}
+                          </div>
+
+                          <TransportTable allocation={tResult.optimal?.allocation} />
+                        </ResultCard>
+
+                        {/* Mensajes de balanceo */}
+                        {(tResult.extra?.balanced?.added_dummy_origin || tResult.extra?.balanced?.added_dummy_destination) && (
+                          <div style={{ marginTop: 8 }}>
+                            {tResult.extra?.balanced?.added_dummy_origin && (
+                              <p className="hint">Se agregó un Origen ficticio para balancear.</p>
+                            )}
+                            {tResult.extra?.balanced?.added_dummy_destination && (
+                              <p className="hint">Se agregó un Destino ficticio para balancear.</p>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                    /* MODO SIMPLE (por si el backend responde sin compare) */
+                    <>
+                      <p>
+                        <b>Estado:</b> {tResult.status} &nbsp; | &nbsp;
+                        <b>Método:</b> {tResult.method_used}
+                      </p>
+                      <p>
+                        <b>Costo Total:</b> {tResult.total_cost} {tResult.has_M ? "(contiene M)" : ""}
+                      </p>
+
+                      <div className="table-wrap">
+                        <table className="matrix">
+                          <thead>
+                            <tr>
+                              <th></th>
+                              {Array.from({ length: tResult.allocation?.[0]?.length || 0 }, (_, j) => (
+                                <th key={`ad-${j}`}>D{j + 1}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(tResult.allocation || []).map((row, i) => (
+                              <tr key={`ar-${i}`}>
+                                <th>O{i + 1}</th>
+                                {row.map((val, j) => (
+                                  <td key={`av-${i}-${j}`}>{Number(val) > 0 ? val : "."}</td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+            </div>
+          </div>
+        </div>
+        </>
+      )}
+
+      {page === "networks" && (
+        <>
+          <header className="hero">
+            <div>
+              <h1>Solucionador de Redes</h1>
+              <p>
+                Ruta más corta, Árbol de expansión mínima, Flujo máximo y Flujo de costo mínimo.
+                Implementado desde cero (sin librerías de optimización).
+              </p>
+              <button className="ghost" onClick={() => setPage("home")}>
+                ← Volver al inicio
+              </button>
+            </div>
+
+            <div className="meta">
+              <label>
+                Método
+                <select value={netMethod} onChange={(e) => setNetMethod(e.target.value)}>
+                  <option value="shortest_path">Ruta más corta (Dijkstra)</option>
+                  <option value="mst">Árbol de expansión mínima (Kruskal)</option>
+                  <option value="max_flow">Flujo máximo (Edmonds–Karp)</option>
+                  <option value="min_cost_flow">Flujo de costo mínimo (SSAP)</option>
+                </select>
+              </label>
+              <button className="primary" onClick={solveNetworks} disabled={netLoading}>
+                {netLoading ? "Resolviendo..." : "Resolver"}
+              </button>
+              <p className="hint">
+                Servidor: <span className="mono">python network_api_server.py</span> (puerto 8001)
+              </p>
+            </div>
+          </header>
+
+          <section className="panel">
+            <h2>Entrada</h2>
+            <p className="empty">
+              Ingresa nodos y aristas en un formato legible. El sistema generará el modelo automáticamente.
+            </p>
+
+            <div className="form-grid">
+              <label>
+                Nodos (separados por coma)
+                <input
+                  value={netNodesText}
+                  onChange={(e) => setNetNodesText(e.target.value)}
+                  placeholder="A,B,C,D,E"
+                />
+              </label>
+
+              <label className="check">
+                <input type="checkbox" checked={netDirected} onChange={(e) => setNetDirected(e.target.checked)} />
+                Red dirigida
+              </label>
+
+              {(netMethod === "shortest_path" || netMethod === "max_flow" || netMethod === "min_cost_flow") ? (
+                <label>
+                  Source
+                  <input value={netSource} onChange={(e) => setNetSource(e.target.value)} placeholder="A" />
+                </label>
+              ) : null}
+
+              {netMethod === "shortest_path" ? (
+                <label>
+                  Target
+                  <input value={netTarget} onChange={(e) => setNetTarget(e.target.value)} placeholder="D" />
+                </label>
+              ) : null}
+
+              {(netMethod === "max_flow" || netMethod === "min_cost_flow") ? (
+                <label>
+                  Sink
+                  <input value={netSink} onChange={(e) => setNetSink(e.target.value)} placeholder="T" />
+                </label>
+              ) : null}
+
+              {netMethod === "min_cost_flow" ? (
+                <label>
+                  Demand
+                  <input type="number" value={netDemand} onChange={(e) => setNetDemand(Number(e.target.value))} />
+                </label>
+              ) : null}
+            </div>
+
+            <div className="toolbar">
+              <button className="ghost" onClick={() => loadNetExample("shortest_path")}>Ejemplo Ruta</button>
+              <button className="ghost" onClick={() => loadNetExample("mst")}>Ejemplo Árbol mínimo</button>
+              <button className="ghost" onClick={() => loadNetExample("max_flow")}>Ejemplo Flujo máximo</button>
+              <button className="ghost" onClick={() => loadNetExample("min_cost_flow")}>Ejemplo Costo mínimo</button>
+              <button className="ghost" onClick={addNetEdge}>+ Arista</button>
+            </div>
+
+            <div className="table-wrap">
+              <table className="tableau">
+                <thead>
+                  <tr>
+                    <th>u</th>
+                    <th>v</th>
+                    <th>{(netMethod === "max_flow" || netMethod === "min_cost_flow") ? "capacity" : "w"}</th>
+                    <th>{netMethod === "min_cost_flow" ? "cost" : ""}</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {netEdges.map((e, i) => (
+                    <tr key={`ne-${i}`}>
+                      <td><input value={e.u} onChange={(ev) => updateNetEdge(i, "u", ev.target.value)} /></td>
+                      <td><input value={e.v} onChange={(ev) => updateNetEdge(i, "v", ev.target.value)} /></td>
+                      <td>
+                        {(netMethod === "max_flow" || netMethod === "min_cost_flow") ? (
+                          <input type="number" value={e.capacity} onChange={(ev) => updateNetEdge(i, "capacity", Number(ev.target.value))} />
+                        ) : (
+                          <input type="number" value={e.w} onChange={(ev) => updateNetEdge(i, "w", Number(ev.target.value))} />
+                        )}
+                      </td>
+                      <td>
+                        {netMethod === "min_cost_flow" ? (
+                          <input type="number" value={e.cost} onChange={(ev) => updateNetEdge(i, "cost", Number(ev.target.value))} />
+                        ) : null}
+                      </td>
+                      <td>
+                        <button className="ghost" onClick={() => removeNetEdge(i)} title="Eliminar">✕</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {netError ? <p className="error">{netError}</p> : null}
+
+            <details className="details">
+              <summary>Ver modelo generado (JSON)</summary>
+              <pre className="code">{netModelPreview}</pre>
+            </details>
+          </section>
+
+          <section className="panel">
+            <h2>Visualización</h2>
+            <NetworkGraph
+              model={netModel}
+              highlightEdges={netHighlightEdges}
+              flowMap={netResult?.flow_map || null}
+            />
+          </section>
+
+          <section className="panel">
+            <h2>Resultado</h2>
+
+            {!netResult && !netError && <p className="empty">Resuelve para ver resultados.</p>}
+
+            {netResult ? (
+              <>
+                <div className="chips">
+                  {Array.isArray(netResult?.summary) &&
+                    netResult.summary.map((c) => (
+                      <span className="chip" key={c}>
+                        {c}
+                      </span>
+                    ))}
+                </div>
+
+                {netMethod === "shortest_path" ? (
+                  <div className="kv">
+                    <div><strong>Source:</strong> {netModel.source}</div>
+                    <div><strong>Target:</strong> {netModel.target}</div>
+                    <div><strong>Distancia:</strong> {fmt(netResult.distance ?? netResult.total_weight ?? netResult.cost)}</div>
+                    <div><strong>Camino:</strong> {(Array.isArray(netResult.path_nodes) ? netResult.path_nodes : derivePathNodes({ edges: netHighlightEdges, source: netModel.source, target: netModel.target, directed: netModel.directed })).join(" → ") || "—"}</div>
+                    <div><strong>Aristas:</strong> {netHighlightEdges.join(", ") || "—"}</div>
+                  </div>
+                ) : null}
+
+                {netMethod === "mst" ? (
+                  <div className="kv">
+                    <div><strong>Aristas del árbol:</strong> {netHighlightEdges.join(", ") || "—"}</div>
+                    <div><strong>Peso total:</strong> {fmt(netResult.total_weight ?? netResult.weight ?? null)}</div>
+                  </div>
+                ) : null}
+
+                {netMethod === "max_flow" ? (
+                  <>
+                    <div className="kv">
+                      <div><strong>Source:</strong> {netModel.source}</div>
+                      <div><strong>Sink:</strong> {netModel.sink}</div>
+                      <div><strong>Flujo máximo:</strong> {fmt(netResult.max_flow ?? netResult.value ?? null)}</div>
+                    </div>
+                    {netResult?.flow_map ? (
+                      <div className="table-wrap">
+                        <table className="tableau">
+                          <thead><tr><th>Arista</th><th>Flujo</th></tr></thead>
+                          <tbody>
+                            {Object.entries(netResult.flow_map)
+                              .filter(([, f]) => Number(f) > 0)
+                              .map(([k, f]) => (
+                                <tr key={k}><td>{k}</td><td>{fmt(f)}</td></tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : null}
+                  </>
+                ) : null}
+
+                {netMethod === "min_cost_flow" ? (
+                  <>
+                    <div className="kv">
+                      <div><strong>Source:</strong> {netModel.source}</div>
+                      <div><strong>Sink:</strong> {netModel.sink}</div>
+                      <div><strong>Demanda:</strong> {fmt(netModel.demand)}</div>
+                      <div><strong>Costo total:</strong> {fmt(netResult.total_cost ?? netResult.cost ?? null)}</div>
+                      <div><strong>Flujo enviado:</strong> {fmt(netResult.sent ?? netResult.total_flow ?? null)}</div>
+                    </div>
+                    {netResult?.flow_map ? (
+                      <div className="table-wrap">
+                        <table className="tableau">
+                          <thead><tr><th>Arista</th><th>Flujo</th></tr></thead>
+                          <tbody>
+                            {Object.entries(netResult.flow_map)
+                              .filter(([, f]) => Number(f) > 0)
+                              .map(([k, f]) => (
+                                <tr key={k}><td>{k}</td><td>{fmt(f)}</td></tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : null}
+                  </>
+                ) : null}
+
+                <details className="details">
+                  <summary>Ver respuesta completa (debug)</summary>
+                  <pre className="code">{JSON.stringify(netResult, null, 2)}</pre>
+                </details>
+              </>
+            ) : null}
+          </section>
+        </>
+      )}
+
     </div>
   );
 }

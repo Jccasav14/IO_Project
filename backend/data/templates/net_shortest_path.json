@@ -1,0 +1,15 @@
+{
+  "nodes": ["A", "B", "C", "D", "E"],
+  "edges": [
+    {"u": "A", "v": "B", "weight": 4},
+    {"u": "A", "v": "C", "weight": 2},
+    {"u": "C", "v": "B", "weight": 1},
+    {"u": "B", "v": "D", "weight": 5},
+    {"u": "C", "v": "D", "weight": 8},
+    {"u": "C", "v": "E", "weight": 10},
+    {"u": "D", "v": "E", "weight": 2}
+  ],
+  "source": "A",
+  "sink": "E",
+  "directed": true
+}
