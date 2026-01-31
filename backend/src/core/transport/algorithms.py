@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any, Union
 
-BIG_M = 1_000_000_000.0
+BIG_M = 1_000_000.0
 
 
 @dataclass
@@ -54,6 +54,45 @@ def total_cost(allocation: List[List[float]], costs: List[List[float]]) -> Tuple
                 z += qty * cc
     return z, has_M
 
+def total_cost_pretty(allocation: List[List[float]], costs: List[List[float]]) -> Tuple[str, float, float, bool]:
+    """
+    Returns:
+      pretty: "aM + b" or "b"
+      m_coeff: a (cantidad asignada en celdas M)
+      constant: b (costo sin M)
+      has_M
+    """
+    constant = 0.0
+    m_coeff = 0.0
+    has_M = False
+
+    for i in range(len(allocation)):
+        for j in range(len(allocation[0]) if allocation else 0):
+            qty = allocation[i][j]
+            if qty > 0:
+                cc = costs[i][j]
+                if cc >= BIG_M - 1_000:
+                    has_M = True
+                    m_coeff += qty
+                else:
+                    constant += qty * cc
+
+    if has_M:
+        if abs(constant) < 1e-9:
+            pretty = f"{_fmt(m_coeff)}M"
+        else:
+            pretty = f"{_fmt(m_coeff)}M + {_fmt(constant)}"
+    else:
+        pretty = _fmt(constant)
+
+    return pretty, m_coeff, constant, has_M
+
+
+def _fmt(x: float) -> str:
+    # Evita .0 innecesario
+    if abs(x - round(x)) < 1e-9:
+        return str(int(round(x)))
+    return f"{x:.6g}"
 
 def northwest_corner(supply: List[float], demand: List[float]) -> List[List[float]]:
     rows = len(supply)
@@ -236,12 +275,24 @@ def optimize_stepping_stone(
     allocation: List[List[float]],
     costs: List[List[float]],
     max_iterations: int = 10_000,
-) -> Tuple[List[List[float]], int]:
+    trace: bool = False,
+    trace_limit: int = 200,
+) -> Union[Tuple[List[List[float]], int], Tuple[List[List[float]], int, List[Dict[str, Any]]]]:
     rows = len(allocation)
     cols = len(allocation[0]) if rows else 0
 
     alloc = [row[:] for row in allocation]
     it = 0
+
+    trace_steps: List[Dict[str, Any]] = []
+
+    # helper: costo total actual (sin M aquí; si usas M en total_cost(), úsala en solve.py)
+    def _total_cost(a: List[List[float]]) -> float:
+        z = 0.0
+        for r in range(rows):
+            for c in range(cols):
+                z += a[r][c] * costs[r][c]
+        return z
 
     while it < max_iterations:
         it += 1
@@ -264,20 +315,31 @@ def optimize_stepping_stone(
                         else:
                             marginal -= costs[r][c]
 
+                    # buscamos mejora => marginal negativo (más negativo, mejor)
                     if marginal < best_marginal - 1e-9:
                         best_marginal = marginal
                         enter_cell = (i, j)
                         best_cycle = cycle
 
+        # Si no hay mejora, terminamos: ya es óptimo
         if enter_cell is None or best_cycle is None:
-            break  # no improving cycle found
-
-        # Theta = min allocation in '-' positions
-        minus_vals = [alloc[r][c] for k, (r, c) in enumerate(best_cycle) if k % 2 == 1]
-        if not minus_vals:
             break
-        theta = min(minus_vals)
 
+        # Theta = min asignación en posiciones '-' (k impar)
+        minus_positions = [(r, c) for k, (r, c) in enumerate(best_cycle) if k % 2 == 1]
+        if not minus_positions:
+            break
+
+        theta = min(alloc[r][c] for (r, c) in minus_positions)
+
+        # celda que sale: una de las '-' que alcanza el mínimo (queda en 0)
+        leaving_cell: Optional[Tuple[int, int]] = None
+        for (r, c) in minus_positions:
+            if abs(alloc[r][c] - theta) <= 1e-9:
+                leaving_cell = (r, c)
+                break
+
+        # aplicar ajuste
         for k, (r, c) in enumerate(best_cycle):
             if k % 2 == 0:
                 alloc[r][c] += theta
@@ -286,4 +348,19 @@ def optimize_stepping_stone(
                 if alloc[r][c] < 1e-9:
                     alloc[r][c] = 0.0
 
+        # guardar trace (si está activado)
+        if trace and len(trace_steps) < trace_limit:
+            trace_steps.append({
+                "iter": it,
+                "enter": [enter_cell[0], enter_cell[1]],
+                "delta": float(best_marginal),        # marginal (Δ) - si es negativo, mejora
+                "theta": float(theta),
+                "cycle": [[r, c] for (r, c) in best_cycle],
+                "leaving": [leaving_cell[0], leaving_cell[1]] if leaving_cell else None,
+                "total_cost": float(_total_cost(alloc)),
+                "allocation": [row[:] for row in alloc],
+            })
+
+    if trace:
+        return alloc, it, trace_steps
     return alloc, it

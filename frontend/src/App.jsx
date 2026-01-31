@@ -178,6 +178,25 @@ function App() {
   const [tResult, setTResult] = useState(null);
   const [tLoading, setTLoading] = useState(false);
   const [tError, setTError] = useState("");
+  const resetTransport = () => {
+    const defaultRows = 2;
+    const defaultCols = 2;
+
+    setTRows(defaultRows);
+    setTCols(defaultCols);
+
+    setTCosts(makeMatrix(defaultRows, defaultCols, 0));
+
+    setTSupply(Array(defaultRows).fill(0));
+    setTDemand(Array(defaultCols).fill(0));
+
+    setTResult(null);
+    setTError("");
+    setTLoading(false);
+
+    setTOptimize(true);
+  };
+
   const ResultCard = ({ title, costLabel = "Costo", cost, highlight = false, children }) => (
     <div
       style={{
@@ -1335,11 +1354,30 @@ function App() {
                   setTError("");
                   setTResult(null);
                   setTLoading(true);
+                  const normalizeCostCell = (v) => {
+                    if (v == null || v === "") return 0;
+
+                    const s = String(v).trim();
+                    if (s.toUpperCase() === "M") return "M";
+
+                    const num = Number(s.replace(",", "."));
+                    return Number.isFinite(num) ? num : 0;
+                  };
+
+                  const normalizeNumber = (v) => {
+                    if (v == null || v === "") return 0;
+                    const num = Number(String(v).replace(",", "."));
+                    return Number.isFinite(num) ? num : 0;
+                  };
                   try {
                     const payload = {
                       method: "compare",
-                      model: { supply: tSupply, demand: tDemand, costs: tCosts },
-                      options: { optimize: tOptimize, compare_all: true },
+                      model: {
+                        supply: tSupply.map(normalizeNumber),
+                        demand: tDemand.map(normalizeNumber),
+                        costs: tCosts.map((row) => row.map(normalizeCostCell)),
+                      },
+                      options: { optimize: tOptimize, compare_all: true, trace: true, trace_limit: 50 },
                     };
                     const res = await fetch("http://127.0.0.1:8002/solve/transport", {
                       method: "POST",
@@ -1347,18 +1385,27 @@ function App() {
                       body: JSON.stringify(payload),
                     });
                     const data = await res.json();
-                    if (!res.ok) throw new Error(data?.message || data?.error || "Error");
-                    setTResult(data);
-                  } catch (err) {
-                    setTError(String(err?.message || err));
-                  } finally {
-                    setTLoading(false);
-                  }
-                }}
-                disabled={tLoading}
-              >
-                {tLoading ? "Resolviendo..." : "Resolver"}
-              </button>
+                      if (!res.ok) throw new Error(data?.message || data?.error || "Error");
+                      setTResult(data);
+                    } catch (err) {
+                      setTError(String(err?.message || err));
+                    } finally {
+                      setTLoading(false);
+                    }
+                  }}
+                  disabled={tLoading}
+                >
+                  {tLoading ? "Resolviendo..." : "Resolver"}
+                </button>
+
+                <button
+                  className="ghost"
+                  onClick={resetTransport}
+                  disabled={tLoading}
+                  style={{ marginLeft: 8 }}
+                >
+                  Limpiar
+                </button>
 
               {tError && <div className="error">{tError}</div>}
             </div>
@@ -1384,27 +1431,33 @@ function App() {
                         {Array.from({ length: tCols }, (_, j) => (
                           <td key={`c-${i}-${j}`}>
                             <input
-                              value={tCosts[i]?.[j] ?? 0}
+                              type="text"
+                              inputMode="decimal"
+                              value={tCosts[i]?.[j] ?? ""}
                               onChange={(e) => {
-                                const v = e.target.value;
+                                const raw = e.target.value;
+                                if (!/^(?:[Mm]|[0-9]*[.,]?[0-9]*)$/.test(raw)) return;
                                 setTCosts((prev) => {
                                   const next = prev.map((row) => row.slice());
-                                  next[i][j] = v === "" ? 0 : v;
+                                  next[i][j] = raw;
                                   return next;
                                 });
                               }}
-                              placeholder="0 / M"
+                              placeholder="0 / 12.5 / 12,5 / M"
                             />
                           </td>
                         ))}
                         <td>
                           <input
-                            value={tSupply[i] ?? 0}
+                            type="text"
+                            inputMode="decimal" 
+                            value={tSupply[i] ?? ""}
                             onChange={(e) => {
-                              const v = e.target.value;
+                              const raw = e.target.value;
+                              if (!/^[0-9]*[.,]?[0-9]*$/.test(raw)) return;
                               setTSupply((prev) => {
                                 const next = prev.slice();
-                                next[i] = v === "" ? 0 : Number(v);
+                                next[i] = raw;
                                 return next;
                               });
                             }}
@@ -1417,12 +1470,15 @@ function App() {
                       {Array.from({ length: tCols }, (_, j) => (
                         <td key={`dem-${j}`}>
                           <input
-                            value={tDemand[j] ?? 0}
+                            type="text"
+                            inputMode="decimal" 
+                            value={tDemand[j] ?? ""}
                             onChange={(e) => {
-                              const v = e.target.value;
+                              const raw = e.target.value;
+                              if (!/^[0-9]*[.,]?[0-9]*$/.test(raw)) return;
                               setTDemand((prev) => {
                                 const next = prev.slice();
-                                next[j] = v === "" ? 0 : Number(v);
+                                next[j] = raw;
                                 return next;
                               });
                             }}
@@ -1459,22 +1515,22 @@ function App() {
                             <tbody>
                               <tr>
                                 <td>Esquina Noroeste</td>
-                                <td>{tResult.initials?.northwest?.total_cost ?? "—"}</td>
+                                <td>{tResult.initials?.northwest?.cost_pretty ?? tResult.initials?.northwest?.total_cost ?? "—"}</td>
                                 <td>{tResult.initials?.northwest?.has_M ? "Contiene M" : ""}</td>
                               </tr>
                               <tr>
                                 <td>Costo Mínimo</td>
-                                <td>{tResult.initials?.min_cost?.total_cost ?? "—"}</td>
+                                <td>{tResult.initials?.min_cost?.cost_pretty ?? tResult.initials?.min_cost?.total_cost ?? "—"}</td>
                                 <td>{tResult.initials?.min_cost?.has_M ? "Contiene M" : ""}</td>
                               </tr>
                               <tr>
                                 <td>Vogel (VAM)</td>
-                                <td>{tResult.initials?.vogel?.total_cost ?? "—"}</td>
+                                <td>{tResult.initials?.vogel?.cost_pretty ?? tResult.initials?.vogel?.total_cost ?? "—"}</td>
                                 <td>{tResult.initials?.vogel?.has_M ? "Contiene M" : ""}</td>
                               </tr>
                               <tr>
                                 <td><b>Óptimo</b></td>
-                                <td><b>{tResult.optimal?.total_cost ?? "—"}</b></td>
+                                <td><b>{tResult.optimal?.cost_pretty ?? tResult.optimal?.total_cost ?? "—"}</b></td>
                                 <td>
                                   {tResult.optimal?.has_M ? "Contiene M" : ""}
                                   {tResult.optimal?.started_from ? ` · Inicio: ${tResult.optimal.started_from}` : ""}
@@ -1510,7 +1566,7 @@ function App() {
                         <ResultCard
                           title="Óptimo (Stepping-Stone)"
                           costLabel="Costo óptimo"
-                          cost={tResult.optimal?.total_cost}
+                          cost={tResult.optimal?.cost_pretty ?? tResult.optimal?.total_cost}
                           highlight
                         >
                           <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 10 }}>
@@ -1525,7 +1581,43 @@ function App() {
                           <TransportTable allocation={tResult.optimal?.allocation} />
                         </ResultCard>
 
-                        {/* Mensajes de balanceo */}
+                        {Array.isArray(tResult.optimal?.trace) && tResult.optimal.trace.length > 0 && (
+                          <div style={{ marginTop: 14 }}>
+                            <h4>Detalle de iteraciones</h4>
+
+                            <details>
+                              <summary style={{ cursor: "pointer" }}>
+                                Ver {tResult.optimal.trace.length} iteraciones
+                              </summary>
+
+                              {tResult.optimal.trace.map((step) => (
+                                <div key={step.iter} style={{ marginTop: 12, padding: 12, border: "1px solid #ddd", borderRadius: 10 }}>
+                                  <p style={{ margin: 0 }}>
+                                    <b>Iteración {step.iter}</b> — <b>Costo:</b> {step.total_cost}
+                                  </p>
+                                  <p style={{ margin: "6px 0" }}>
+                                    <b>Entra:</b> O{step.enter[0] + 1}, D{step.enter[1] + 1}{" "}
+                                    | <b>Δ:</b> {step.delta} | <b>θ:</b> {step.theta}
+                                    {step.leaving ? (
+                                      <>
+                                        {" "} | <b>Sale:</b> O{step.leaving[0] + 1}, D{step.leaving[1] + 1}
+                                      </>
+                                    ) : null}
+                                  </p>
+
+                                  <p style={{ margin: "6px 0" }}>
+                                    <b>Ciclo:</b> {step.cycle.map(([r, c]) => ` (O${r + 1},D${c + 1})`).join(" → ")}
+                                  </p>
+
+                                  <TransportTable allocation={step.allocation} />
+                                </div>
+                              ))}
+                            </details>
+                          </div>
+                        )}
+
+
+                        { }
                         {(tResult.extra?.balanced?.added_dummy_origin || tResult.extra?.balanced?.added_dummy_destination) && (
                           <div style={{ marginTop: 8 }}>
                             {tResult.extra?.balanced?.added_dummy_origin && (
