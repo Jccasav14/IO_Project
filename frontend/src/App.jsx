@@ -1267,7 +1267,7 @@ function App() {
               <h1>Solucionador de Transporte</h1>
               <p>
                 Calcula soluciones iniciales con Esquina Noroeste, Costo Mínimo y Vogel (VAM),
-                y (opcionalmente) optimiza hasta el óptimo con Stepping-Stone.
+                y (opcionalmente) optimiza hasta el óptimo con el metodo simplex de Transporte.
               </p>
               <button className="ghost" onClick={() => setPage("home")}>
                 ← Volver al inicio
@@ -1564,7 +1564,7 @@ function App() {
 
                         {/* Óptimo como tarjeta destacada */}
                         <ResultCard
-                          title="Óptimo (Stepping-Stone)"
+                          title="Óptimo (Simplex Transporte)"
                           costLabel="Costo óptimo"
                           cost={tResult.optimal?.cost_pretty ?? tResult.optimal?.total_cost}
                           highlight
