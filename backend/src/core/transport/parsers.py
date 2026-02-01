@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Tuple
 from .errors import TransportModelError
 from .model import TransportModel
 
-BIG_M = 1_000_000_000.0
+BIG_M = 1_000_000.0
 
 
 def parse_val(v: Any) -> float:
