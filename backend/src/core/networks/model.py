@@ -45,7 +45,11 @@ class NetworkModel:
             nodes=nodes,
             edges=edges,
             source=(str(d.get("source")) if d.get("source") is not None else None),
-            sink=(str(d.get("sink")) if d.get("sink") is not None else None),
+            sink=(
+                str(d.get("sink"))
+                if d.get("sink") is not None
+                else (str(d.get("target")) if d.get("target") is not None else None)
+            ),
             demand=float(d.get("demand", 0.0) or 0.0),
             directed=bool(d.get("directed", True)),
         )
