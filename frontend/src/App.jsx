@@ -868,11 +868,7 @@ function App() {
                   Ir a Redes
                 </button>
               </div>
-              <div className="module-card disabled">
-                <h3>Inventario / Prog. Dinámica</h3>
-                <p>Opcional según avance del proyecto</p>
-                <button disabled>Próximamente</button>
-              </div>
+              
             </div>
           </section>
         </div>
