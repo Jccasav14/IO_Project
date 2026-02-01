@@ -1678,10 +1678,7 @@ function App() {
           <header className="hero">
             <div>
               <h1>Solucionador de Redes</h1>
-              <p>
-                Ruta más corta, Árbol de expansión mínima, Flujo máximo y Flujo de costo mínimo.
-                Implementado desde cero (sin librerías de optimización).
-              </p>
+              
               <button className="ghost" onClick={() => setPage("home")}>
                 ← Volver al inicio
               </button>
@@ -1700,9 +1697,7 @@ function App() {
               <button className="primary" onClick={solveNetworks} disabled={netLoading}>
                 {netLoading ? "Resolviendo..." : "Resolver"}
               </button>
-              <p className="hint">
-                Servidor: <span className="mono">python network_api_server.py</span> (puerto 8001)
-              </p>
+
             </div>
           </header>
 
