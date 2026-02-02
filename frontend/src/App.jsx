@@ -167,6 +167,13 @@ function App() {
     { u: "D", v: "E", w: 4, capacity: 0, cost: 0 },
   ]);
 
+  // Redes - IA (análisis de sensibilidad)
+  const [netAiLoading, setNetAiLoading] = useState(false);
+  const [netAiError, setNetAiError] = useState("");
+  const [netSensitivity, setNetSensitivity] = useState("");
+  // Guardamos la respuesta completa para el panel "debug" (porque el solver responde { result: {...} })
+  const [netRawResponse, setNetRawResponse] = useState(null);
+
 
   // Transporte
   const [tRows, setTRows] = useState(3);
@@ -585,6 +592,9 @@ function App() {
   async function solveNetworks() {
     setNetError("");
     setNetResult(null);
+    setNetRawResponse(null);
+    setNetAiError("");
+    setNetSensitivity("");
 
     const model = buildNetModel();
     if (!Array.isArray(model.nodes) || model.nodes.length === 0) {
@@ -657,12 +667,49 @@ function App() {
       if (!res.ok) {
         setNetError(data?.error || "Error al resolver redes.");
       } else {
-        setNetResult(data);
+        // El backend devuelve { result: {...} }. Guardamos ambas cosas:
+        setNetRawResponse(data);
+        setNetResult(data?.result ?? data);
       }
     } catch (e) {
       setNetError("No se pudo conectar al servidor de Redes (http://127.0.0.1:8001). ¿Está encendido?");
     } finally {
       setNetLoading(false);
+    }
+  }
+
+  async function analyzeNetSensitivity() {
+    setNetAiError("");
+    setNetSensitivity("");
+
+    const model = buildNetModel();
+    const resultPayload = netResult || null;
+
+    setNetAiLoading(true);
+    try {
+      const payload = {
+        method: netMethod,
+        model,
+        result: resultPayload,
+        // Usamos el texto del problema como contexto por defecto; el backend ya tiene fallback DISTRIMAX.
+        context: problemText || "",
+      };
+
+      const res = await fetch("http://127.0.0.1:8001/ai/sensitivity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNetAiError(data?.error || "Error al generar análisis de sensibilidad.");
+      } else {
+        setNetSensitivity(String(data?.analysis || ""));
+      }
+    } catch (e) {
+      setNetAiError("No se pudo conectar al servidor de Redes (IA) (http://127.0.0.1:8001). ¿Está encendido?");
+    } finally {
+      setNetAiLoading(false);
     }
   }
 
@@ -868,11 +915,7 @@ function App() {
                   Ir a Redes
                 </button>
               </div>
-              <div className="module-card disabled">
-                <h3>Inventario / Prog. Dinámica</h3>
-                <p>Opcional según avance del proyecto</p>
-                <button disabled>Próximamente</button>
-              </div>
+              
             </div>
           </section>
         </div>
@@ -1678,10 +1721,7 @@ function App() {
           <header className="hero">
             <div>
               <h1>Solucionador de Redes</h1>
-              <p>
-                Ruta más corta, Árbol de expansión mínima, Flujo máximo y Flujo de costo mínimo.
-                Implementado desde cero (sin librerías de optimización).
-              </p>
+              
               <button className="ghost" onClick={() => setPage("home")}>
                 ← Volver al inicio
               </button>
@@ -1700,9 +1740,16 @@ function App() {
               <button className="primary" onClick={solveNetworks} disabled={netLoading}>
                 {netLoading ? "Resolviendo..." : "Resolver"}
               </button>
-              <p className="hint">
-                Servidor: <span className="mono">python network_api_server.py</span> (puerto 8001)
-              </p>
+
+              <button
+                className="ghost"
+                onClick={analyzeNetSensitivity}
+                disabled={netAiLoading || !netResult}
+                title={!netResult ? "Primero resuelve la red" : "Generar análisis de sensibilidad (Gemini)"}
+              >
+                {netAiLoading ? "Analizando..." : "Sensibilidad (IA)"}
+              </button>
+
             </div>
           </header>
 
@@ -1901,9 +1948,35 @@ function App() {
                   </>
                 ) : null}
 
+                <div style={{ marginTop: 16 }}>
+                  <h3 style={{ margin: "0 0 8px 0" }}>Análisis de sensibilidad (IA)</h3>
+                  <p className="hint" style={{ marginTop: 0 }}>
+                    Genera un análisis breve y aplicable al contexto de la empresa, explicando qué pasa si cambian costos,
+                    demanda o capacidades.
+                  </p>
+
+                  <div className="toolbar" style={{ marginTop: 8 }}>
+                    <button className="primary" onClick={analyzeNetSensitivity} disabled={netAiLoading}>
+                      {netAiLoading ? "Generando..." : "Generar análisis"}
+                    </button>
+                    <button className="ghost" onClick={() => { setNetSensitivity(""); setNetAiError(""); }} disabled={netAiLoading}>
+                      Limpiar
+                    </button>
+                  </div>
+
+                  {netAiError ? <p className="error">{netAiError}</p> : null}
+                  {netSensitivity ? (
+                    <div className="ai-box">
+                      <pre className="ai-text">{netSensitivity}</pre>
+                    </div>
+                  ) : (
+                    <p className="empty" style={{ marginTop: 8 }}>Aún no se ha generado el análisis.</p>
+                  )}
+                </div>
+
                 <details className="details">
                   <summary>Ver respuesta completa (debug)</summary>
-                  <pre className="code">{JSON.stringify(netResult, null, 2)}</pre>
+                  <pre className="code">{JSON.stringify(netRawResponse || netResult, null, 2)}</pre>
                 </details>
               </>
             ) : null}
