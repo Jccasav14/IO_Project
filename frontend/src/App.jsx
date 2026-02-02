@@ -182,9 +182,17 @@ function App() {
   const [tSupply, setTSupply] = useState(Array.from({ length: 3 }, () => 0));
   const [tDemand, setTDemand] = useState(Array.from({ length: 3 }, () => 0));
   const [tOptimize, setTOptimize] = useState(true);
+  const [tSensEnabled, setTSensEnabled] = useState(true);
+  const [tProblemText, setTProblemText] = useState(
+    "Problema de transporte: asignar oferta de orígenes a demanda de destinos minimizando el costo."
+  );
   const [tResult, setTResult] = useState(null);
   const [tLoading, setTLoading] = useState(false);
   const [tError, setTError] = useState("");
+  // IA (Hugging Face)
+  const [tAiLoading, setTAiLoading] = useState(false);
+  const [tAiReport, setTAiReport] = useState("");
+  const [tAiError, setTAiError] = useState("");
   const resetTransport = () => {
     const defaultRows = 2;
     const defaultCols = 2;
@@ -193,15 +201,19 @@ function App() {
     setTCols(defaultCols);
 
     setTCosts(makeMatrix(defaultRows, defaultCols, 0));
-
     setTSupply(Array(defaultRows).fill(0));
     setTDemand(Array(defaultCols).fill(0));
+
+    setTOptimize(true);
+    setTSensEnabled(true);
 
     setTResult(null);
     setTError("");
     setTLoading(false);
 
-    setTOptimize(true);
+    setTAiLoading(false);
+    setTAiReport("");
+    setTAiError("");
   };
 
   const ResultCard = ({ title, costLabel = "Costo", cost, highlight = false, children }) => (
@@ -1331,6 +1343,19 @@ function App() {
                   </label>
                 </div>
               </label>
+              <label style={{ color: "#fff", marginTop: 12, display: "block" }}>
+                Análisis
+                <div style={{ marginTop: 6 }}>
+                  <label style={{ display: "flex", gap: 8, alignItems: "center", color: "#fff" }}>
+                    <input
+                      type="checkbox"
+                      checked={tSensEnabled}
+                      onChange={(e) => setTSensEnabled(e.target.checked)}
+                    />
+                    Analisis de sensibilidad
+                  </label>
+                </div>
+              </label>
 
             </div>
           </header>
@@ -1703,11 +1728,112 @@ function App() {
                               </tr>
                             ))}
                           </tbody>
-                        </table>
+                          </table>
+                        </div>
+                      </>
+                    )}
+                    {/* =========================
+                          SECCIÓN IA (AL FINAL)
+                        ========================= */}
+                    <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid #2a2a2a" }}>
+                      <h3 style={{ marginBottom: 8 }}>Análisis de sensibilidad (IA)</h3>
+
+                      <p className="hint" style={{ marginTop: 0 }}>
+                        Genera un texto listo para tu informe usando el resultado ya calculado (incluye u/v y costos reducidos si están disponibles).
+                      </p>
+
+                      <div style={{ marginTop: 10 }}>
+                        <label style={{ display: "block", marginBottom: 6 }}>
+                          Contexto del problema (opcional)
+                        </label>
+                        <textarea
+                          value={tProblemText}
+                          onChange={(e) => setTProblemText(e.target.value)}
+                          rows={4}
+                          style={{ width: "100%", resize: "vertical" }}
+                          placeholder="Pega aquí el enunciado del ejercicio o una breve descripción..."
+                        />
                       </div>
-                    </>
-                  )}
-                </div>
+
+                      <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+                        <button
+                          className="primary"
+                          disabled={tLoading || tAiLoading || !tResult}
+                          onClick={async () => {
+                            setTAiError("");
+                            setTAiReport("");
+                            setTAiLoading(true);
+
+                            const normalizeCostCell = (v) => {
+                              if (v == null || v === "") return 0;
+                              const s = String(v).trim();
+                              if (s.toUpperCase() === "M") return "M";
+                              const num = Number(s.replace(",", "."));
+                              return Number.isFinite(num) ? num : 0;
+                            };
+
+                            const normalizeNumber = (v) => {
+                              if (v == null || v === "") return 0;
+                              const num = Number(String(v).replace(",", "."));
+                              return Number.isFinite(num) ? num : 0;
+                            };
+
+                            try {
+                              const modelPayload = {
+                                supply: tSupply.map(normalizeNumber),
+                                demand: tDemand.map(normalizeNumber),
+                                costs: tCosts.map((row) => row.map(normalizeCostCell)),
+                              };
+
+                              const solverResult = tResult.compare ? tResult.optimal : tResult;
+
+                              const res = await fetch("http://127.0.0.1:8002/ai/report", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                  problem_text: tProblemText,
+                                  model: modelPayload,
+                                  result: solverResult,
+                                }),
+                              });
+
+                              const data = await res.json();
+                              if (!res.ok) throw new Error(data?.message || data?.error || "Error IA");
+                              setTAiReport(data?.report || "");
+                            } catch (err) {
+                              setTAiError(String(err?.message || err));
+                            } finally {
+                              setTAiLoading(false);
+                            }
+                          }}
+                        >
+                          {tAiLoading ? "Generando..." : "Generar análisis (IA)"}
+                        </button>
+
+                        <button
+                          className="ghost"
+                          disabled={tAiLoading}
+                          onClick={() => {
+                            setTAiError("");
+                            setTAiReport("");
+                          }}
+                        >
+                          Limpiar análisis
+                        </button>
+                      </div>
+
+                      {tAiError && <div className="error" style={{ marginTop: 10 }}>{tAiError}</div>}
+
+                      {tAiReport && (
+                        <div style={{ marginTop: 12, padding: 12, border: "1px solid #444", borderRadius: 10 }}>
+                          <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "inherit" }}>
+                            {tAiReport}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+
+                  </div>
               )}
 
             </div>
