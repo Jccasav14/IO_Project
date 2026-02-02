@@ -84,3 +84,33 @@ Body:
 - Dijkstra asume pesos no negativos.
 - MST se usa para grafos no dirigidos.
 - El frontend genera el modelo automáticamente sin que el usuario escriba JSON.
+
+
+## Endpoints con Gemini (análisis de sensibilidad)
+
+Este backend soporta un endpoint de **análisis de sensibilidad** para Redes usando la misma API key de Gemini del `.env`
+(igual que el módulo LP). Variables esperadas en `.env`:
+
+- `GEMINI_API_KEY`
+- `GEMINI_MODEL_REPORT` (ej: `gemini-2.5-flash`)
+
+### POST /ai/sensitivity  (alias: /ai/report)
+
+**Body (ejemplo mínimo):**
+```json
+{
+  "method": "shortest_path",
+  "context": "Pega aquí el contexto de DISTRIMAX (opcional).",
+  "model": {
+    "nodes": ["A","B","C"],
+    "edges": [{"u":"A","v":"B","w":5}],
+    "source": "A",
+    "target": "C"
+  }
+}
+```
+
+Respuesta:
+```json
+{ "analysis": "..." }
+```
