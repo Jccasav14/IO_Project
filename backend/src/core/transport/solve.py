@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Literal, Tuple
+from typing import Any, Dict, Literal
 
 from .errors import TransportModelError
 from .parsers import model_from_dict
@@ -13,6 +13,7 @@ from .algorithms import (
     total_cost,
     total_cost_pretty,
 )
+from .sensitivity import transport_sensitivity
 
 Method = Literal["auto", "northwest", "min_cost", "vogel", "optimize", "compare"]
 
@@ -47,7 +48,8 @@ def solve_transport(problem: Dict[str, Any]) -> Dict[str, Any]:
     do_opt = bool(opts.get("optimize", method in ("auto", "optimize", "compare")))
     max_it = int(opts.get("max_iterations", 10_000))
     trace_enabled = bool(opts.get("trace", True))
-    trace_limit = int(opts.get("trace_limit", 50)) 
+    trace_limit = int(opts.get("trace_limit", 50))
+    do_sens = bool(opts.get("sensitivity", False))
 
     # --- 1) Siempre calculamos los 3 iniciales si compare_all ---
     if compare_all:
@@ -59,14 +61,19 @@ def solve_transport(problem: Dict[str, Any]) -> Dict[str, Any]:
         s_mc = _pack("min_cost", alloc_mc, bal.costs)
         s_vam = _pack("vogel", alloc_vam, bal.costs)
 
+        # (Opcional) sensibilidad en iniciales
+        if do_sens:
+            s_nw["sensitivity"] = transport_sensitivity(bal.costs, alloc_nw)
+            s_mc["sensitivity"] = transport_sensitivity(bal.costs, alloc_mc)
+            s_vam["sensitivity"] = transport_sensitivity(bal.costs, alloc_vam)
+
         initials = {
             "northwest": s_nw,
             "min_cost": s_mc,
             "vogel": s_vam,
         }
 
-        # Elegimos como punto de partida para optimizar el mejor (menor costo)
-        # Nota: si hay "M" en alguno, igual se compara por z (tu total_cost ya lo maneja)
+        # Elegimos como punto de partida el mejor (menor costo)
         best_key = min(initials.keys(), key=lambda k: initials[k]["total_cost"])
         start_alloc = initials[best_key]["allocation"]
         started_from = best_key
@@ -95,6 +102,10 @@ def solve_transport(problem: Dict[str, Any]) -> Dict[str, Any]:
         optimal["status"] = "OPTIMAL" if do_opt else "FEASIBLE"
         optimal["trace"] = trace_steps
 
+        # ✅ sensibilidad para la solución final
+        if do_sens:
+            optimal["sensitivity"] = transport_sensitivity(bal.costs, final_alloc)
+
         return {
             "status": optimal["status"],
             "compare": True,
@@ -110,7 +121,9 @@ def solve_transport(problem: Dict[str, Any]) -> Dict[str, Any]:
             },
         }
 
-    # --- 2) Modo normal (como lo tenías) ---
+    # --- 2) Modo normal ---
+    trace_steps = []  # ✅ importante para no explotar si do_opt=False
+
     # Inicial factible según método
     if method in ("northwest", "esquina_noroeste", "nw"):
         alloc = northwest_corner(bal.supply, bal.demand)
@@ -140,7 +153,7 @@ def solve_transport(problem: Dict[str, Any]) -> Dict[str, Any]:
 
     z, has_M = total_cost(alloc, bal.costs)
 
-    return {
+    payload = {
         "status": "OPTIMAL" if do_opt else "FEASIBLE",
         "method_used": used,
         "iterations": iterations,
@@ -157,3 +170,9 @@ def solve_transport(problem: Dict[str, Any]) -> Dict[str, Any]:
         },
         "trace": trace_steps,
     }
+
+    # ✅ sensibilidad en modo normal
+    if do_sens:
+        payload["sensitivity"] = transport_sensitivity(bal.costs, alloc)
+
+    return payload
