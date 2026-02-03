@@ -3,6 +3,7 @@ from typing import List, Tuple
 from .model import LPModel, Constraint
 
 def _normalize_constraint_for_dual(c: Constraint) -> Constraint:
+    # Asegura b>=0 multiplicando por -1 cuando es necesario
     # Igual que en otros módulos: asegura b >= 0
     if c.b >= 0:
         return c
@@ -27,6 +28,7 @@ def build_dual(primal: LPModel) -> Tuple[LPModel, dict]:
     Retorna: (dual_model, mapping_info)
     mapping_info permite interpretar las variables duales originales si lo desean.
     """
+    # Normaliza restricciones para signos consistentes
     # Normalizar b>=0 para estabilidad
     cons = [_normalize_constraint_for_dual(c) for c in primal.constraints]
 
@@ -37,6 +39,7 @@ def build_dual(primal: LPModel) -> Tuple[LPModel, dict]:
     n = len(cvec)   # variables primal => restricciones dual
 
     # Dual sense
+    # El sentido del dual es el opuesto al del primal
     dual_sense = "min" if primal.sense == "max" else "max"
 
     # Construcción de variables duales no negativas (expandimos según tipo).
@@ -69,6 +72,7 @@ def build_dual(primal: LPModel) -> Tuple[LPModel, dict]:
             dual_c[k] += b[i]*sign
 
     # Restricciones dual: A^T y >= c (si primal max, x>=0)
+    # Restricciones duales: A^T y >= c (primal max) o A^T y <= c (primal min)
     #                      A^T y <= c (si primal min, x>=0)
     dual_constraints: List[Constraint] = []
     for j in range(n):

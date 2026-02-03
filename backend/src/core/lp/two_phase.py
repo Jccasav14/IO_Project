@@ -8,6 +8,7 @@ from .errors import UnboundedError
 
 @dataclass
 class TwoPhaseBuild:
+    # Datos necesarios para ejecutar Two-Phase
     T: List[List[float]]
     basis: List[int]
     n_original: int
@@ -15,6 +16,7 @@ class TwoPhaseBuild:
     var_names: List[str]
 
 def _normalize_constraint(c: Constraint) -> Constraint:
+    # Asegura b>=0 multiplicando por -1 cuando es necesario
     if c.b >= 0:
         return c
     a = [-v for v in c.a]
@@ -27,6 +29,7 @@ def _normalize_constraint(c: Constraint) -> Constraint:
     return Constraint(a=a, op=op, b=b)
 
 def build_phase1_tableau(model: LPModel) -> TwoPhaseBuild:
+    # Construye el tableau de Fase I (minimiza suma de artificiales)
     constraints = [_normalize_constraint(cc) for cc in model.constraints]
     n = len(model.c)
     m = len(constraints)
@@ -95,10 +98,12 @@ def build_phase1_tableau(model: LPModel) -> TwoPhaseBuild:
     return TwoPhaseBuild(T=T, basis=basis, n_original=n, artificial_cols=artificial_cols, var_names=var_names)
 
 def _remove_columns(T: List[List[float]], remove_cols: List[int]) -> List[List[float]]:
+    # Elimina columnas (tipicamente artificiales) del tableau
     keep = [j for j in range(len(T[0])) if j not in set(remove_cols)]
     return [[row[j] for j in keep] for row in T]
 
 def _map_basis_after_removal(basis: List[int], remove_cols: List[int]) -> List[int]:
+    # Re-mapea indices de la base tras eliminar columnas
     remove_cols = sorted(remove_cols)
     remove_set = set(remove_cols)
     def new_index(old: int) -> int:
@@ -117,6 +122,7 @@ def _map_basis_after_removal(basis: List[int], remove_cols: List[int]) -> List[i
 
 
 def _final_info(T: List[List[float]], basis: List[int], var_names: List[str]) -> dict:
+    # Empaqueta metadata del tableau final para reportes/UI
     basic_vars = [var_names[i] if 0 <= i < len(var_names) else "?" for i in basis]
     nonbasic_vars = [var_names[j] for j in range(len(var_names)) if j not in basis]
     return {
@@ -135,6 +141,7 @@ def _rebuild_phase2_objective(
     sense: str,
     ops: List[str] | None = None,
 ) -> None:
+    # Reconstruye la fila objetivo original y la hace canonica
     c_vec = c[:]
     if sense == "min":
         c_vec = [-v for v in c_vec]
@@ -164,6 +171,7 @@ def _pivot_out_artificial_zeros(
     n_original: int,
     ops: List[str] | None = None,
 ) -> None:
+    # Si una artificial removida era basica con RHS 0, la saca con pivote
     # Si quedo una columna removida como basica (-1 en basis) con RHS 0, intentamos pivotear
     # buscando una columna no basica con coef != 0 en esa fila para formar base.
     for i, bcol in enumerate(basis, start=1):
@@ -180,6 +188,7 @@ def _pivot_out_artificial_zeros(
                 break
 
 def solve_two_phase(model: LPModel, log: bool=False) -> LPSolution:
+    # Fase I: busca factibilidad, Fase II: optimiza el objetivo real
     # Fase I
     build = build_phase1_tableau(model)
     T1, b1 = build.T, build.basis

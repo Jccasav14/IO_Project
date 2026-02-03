@@ -7,12 +7,14 @@ from .errors import UnboundedError
 
 @dataclass
 class BasicBuild:
+    # Datos necesarios para ejecutar simplex basico
     T: List[List[float]]
     basis: List[int]
     n_original: int
     var_names: List[str]
 
 def build_basic_tableau(model: LPModel) -> BasicBuild:
+    # Construye el tableau inicial para <= con RHS no negativo
     # Requiere: todas las restricciones <= y b >= 0
     n = len(model.c)
     m = len(model.constraints)
@@ -49,6 +51,7 @@ def build_basic_tableau(model: LPModel) -> BasicBuild:
 
 
 def _final_info(T: List[List[float]], basis: List[int], var_names: List[str]) -> dict:
+    # Empaqueta metadata del tableau final para reportes/UI
     basic_vars = [var_names[i] if 0 <= i < len(var_names) else "?" for i in basis]
     nonbasic_vars = [var_names[j] for j in range(len(var_names)) if j not in basis]
     return {
@@ -61,6 +64,7 @@ def _final_info(T: List[List[float]], basis: List[int], var_names: List[str]) ->
     }
 
 def solve_simplex_basic(model: LPModel, log: bool=False) -> LPSolution:
+    # Resuelve usando simplex basico (tableau + simplex_max)
     build = build_basic_tableau(model)
     try:
         history = []

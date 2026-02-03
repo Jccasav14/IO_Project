@@ -11,14 +11,17 @@ from .dual import build_dual
 Method = Literal["auto", "simplex", "two_phase", "big_m", "dual"]
 
 def can_use_basic_simplex(model: LPModel) -> bool:
+    # Simplex basico solo funciona si todas las restricciones son <= y b>=0
     # Todas <= y b >= 0
     return all(c.op == "<=" and c.b >= 0 for c in model.constraints)
 
 def choose_method(model: LPModel) -> str:
+    # Selector automatico: usa simplex si aplica, si no Two-Phase
     # Regla: si todo es <= y b>=0 => simplex; caso contrario => two_phase (robusto)
     return "simplex" if can_use_basic_simplex(model) else "two_phase"
 
 def solve_lp(model_input: Union[dict, LPModel], method: Method = "auto", log: bool = False) -> LPSolution:
+    # Normaliza la entrada a LPModel y ejecuta el solver elegido
     model = model_input if isinstance(model_input, LPModel) else model_from_dict(model_input)
 
     if method == "auto":

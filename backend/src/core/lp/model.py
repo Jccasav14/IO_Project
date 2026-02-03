@@ -7,12 +7,14 @@ Sense = Literal["max", "min"]
 
 @dataclass
 class Constraint:
+    # Restriccion lineal: a * x (op) b
     a: List[float]
     op: Op
     b: float
 
 @dataclass
 class LPModel:
+    # Modelo de Programacion Lineal con variables no negativas (x >= 0)
     name: str
     sense: Sense
     c: List[float]
@@ -22,6 +24,7 @@ class LPModel:
 
 @dataclass
 class LPSolution:
+    # Contenedor estandar de la solucion retornada por los solvers
     status: str  # "OPTIMAL" | "INFEASIBLE" | "UNBOUNDED"
     x: List[float]
     objective_value: float

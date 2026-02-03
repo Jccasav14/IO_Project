@@ -10,6 +10,7 @@ M_DEFAULT = 1e6
 
 @dataclass
 class BigMBuild:
+    # Datos necesarios para ejecutar Big-M
     T: List[List[float]]
     basis: List[int]
     n_original: int
@@ -17,6 +18,7 @@ class BigMBuild:
     var_names: List[str]
 
 def _normalize_constraint(c: Constraint) -> Constraint:
+    # Asegura b>=0 multiplicando por -1 cuando es necesario
     if c.b >= 0:
         return c
     a = [-v for v in c.a]
@@ -29,6 +31,7 @@ def _normalize_constraint(c: Constraint) -> Constraint:
     return Constraint(a=a, op=op, b=b)
 
 def build_tableau_big_m(model: LPModel, M: float = M_DEFAULT) -> BigMBuild:
+    # Construye el tableau inicial con holguras/excesos/artificiales
     constraints = [_normalize_constraint(cc) for cc in model.constraints]
     n = len(model.c)
     m = len(constraints)
@@ -104,6 +107,7 @@ def build_tableau_big_m(model: LPModel, M: float = M_DEFAULT) -> BigMBuild:
 
 
 def _final_info(T: List[List[float]], basis: List[int], var_names: List[str]) -> dict:
+    # Empaqueta metadata del tableau final para reportes/UI
     basic_vars = [var_names[i] if 0 <= i < len(var_names) else "?" for i in basis]
     nonbasic_vars = [var_names[j] for j in range(len(var_names)) if j not in basis]
     return {
@@ -116,6 +120,7 @@ def _final_info(T: List[List[float]], basis: List[int], var_names: List[str]) ->
     }
 
 def solve_big_m(model: LPModel, M: float = M_DEFAULT, log: bool=False) -> LPSolution:
+    # Resuelve el PL con Big-M (penaliza variables artificiales)
     build = build_tableau_big_m(model, M=M)
 
     try:
